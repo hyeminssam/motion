@@ -340,7 +340,7 @@ table.list td{border-bottom:1px solid var(--line); padding:8px}
                 <button class="sweep" data-sw="1">🧹 앞<br>쓸기</button>
                 <button class="sweep" data-sw="3">🧹 아래쪽<br>쓸기</button>
               </div>
-              <div style="font-size:14px;color:var(--sub);margin-top:6px">돌이 멈출 때까지 계속 쓸 수 있어요! 앞을 쓸면 마찰력이 작아져 훨씬 멀리 가고(3초 쓸면 약 4 m 더), 위·아래쪽을 쓸면 그쪽으로 휘어요. (키보드: ↑ → ↓)</div>
+              <div style="font-size:14px;color:var(--sub);margin-top:6px">돌이 멈출 때까지 계속 쓸 수 있어요! 얼음 위 <b style="color:#14a35a">✕</b>는 "지금 쓸기를 멈추면 돌이 멈출 곳"이에요. 앞을 쓸면 ✕가 앞으로, 위·아래쪽을 쓸면 그쪽으로 움직여요. (키보드: ↑ → ↓)</div>
             </div>
           </div>
         </div>
@@ -354,6 +354,7 @@ table.list td{border-bottom:1px solid var(--line); padding:8px}
               <li>움직이는 동안 <b>🧹 쓸기</b>로 마찰력을 바꿔 더 멀리 보내거나 휘게 해요.</li>
               <li>다른 돌과 <b>부딪히면</b> 힘을 받아 운동 방향이 바뀌어요.</li>
               <li>모두 던진 뒤 <b>과녁 한가운데에 가장 가까운 돌</b>의 주인이 1등!</li>
+              <li>아무도 과녁에 넣지 못하면 <b>모두 탈락</b>! (남은 사람이 4명 이하인 <b>결정전</b>에서는 탈락 없이 다시 해요)</li>
             </ol>
           </div>
           <div class="card" id="curlBracketCard"><h3>🏆 대진표</h3><div class="bracket" id="curlBracket"><span style="color:var(--sub)">아직 대회가 없어요.</span></div></div>
@@ -1076,9 +1077,9 @@ APP.modules.lab = (() => {
 /* ================= ② 컬링 대결 ================= */
 /* 실제 컬링 시트 비율(0.1 m = 1칸): 폭 4.75 m, 해크→먼 쪽 티 라인 38.4 m */
 const CURLK = {
-  SW: 47.5, CY: 23.75, R: 2.6, HACK: 10, NTEE: 28, HOG: 92, FHOG: 330, TEE: 394, BACK: 412, LEN: 432, HOUSE: 18.3,
-  C: 4, KD: 0.02, C_FRONT: 2.2, KD_FRONT: 0.01, SIDE: 0.8, LAT: 0.65, WALL_E: 0.65, ACC: 150, VMAX: 80, E: 0.9,
-  VIEW_W: 120, VIEW_H: 52, MARG: 2.25, GOOD: [37, 52]
+  SW: 47.5, CY: 23.75, R: 2.6, HACK: 10, NTEE: 28, HOG: 92, FHOG: 230, TEE: 394, BACK: 412, LEN: 432, HOUSE: 18.3,
+  C: 4, KD: 0.02, C_FRONT: 1.7, KD_FRONT: 0.01, SIDE: 0.8, LAT: 1.4, WALL_E: 0.65, ACC: 150, VMAX: 80, E: 0.9,
+  VIEW_W: 120, VIEW_H: 52, MARG: 2.25, GOOD: [36, 50], TURN: 45
 };
 /* 과녁(빨강·파랑)과 헷갈리지 않는 색: 노랑, 초록, 보라 */
 const STONE_COLORS = ['#ffc400', '#12b886', '#9c36b5'];
@@ -1224,6 +1225,26 @@ function drawRink(ctx, o) {
     ctx.strokeStyle = 'rgba(20,163,90,.7)'; ctx.lineWidth = .35; ctx.setLineDash([1.6, 1.2]);
     ctx.beginPath(); ctx.moveTo(o.aim.x, o.aim.y); ctx.lineTo(o.aim.x + 70, o.aim.y); ctx.stroke(); ctx.setLineDash([]);
   }
+  // 스윕한 얼음(반짝이는 길)
+  if (o.thrown && o.phase === 1 && o.sweep && o.vel) {
+    const { x, y } = o.thrown, v = Math.hypot(o.vel.x, o.vel.y) || 1, ux = o.vel.x / v, uy = o.vel.y / v;
+    const side = o.sweep === 2 ? -1 : o.sweep === 3 ? 1 : 0;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(Math.atan2(uy, ux));
+    const g2 = ctx.createLinearGradient(K.R, 0, K.R + 14, 0); g2.addColorStop(0, 'rgba(124,77,255,.45)'); g2.addColorStop(1, 'rgba(124,77,255,0)');
+    ctx.fillStyle = g2; roundRect(ctx, K.R, side * 2.2 - 2.4, 14, 4.8, 2.4); ctx.fill();
+    ctx.restore();
+  }
+  // 예상 멈춤 위치 (스윕하면 바뀜)
+  if (o.pred && o.pred.pts.length) {
+    ctx.save(); ctx.strokeStyle = o.pred.out ? 'rgba(224,56,75,.75)' : 'rgba(20,163,90,.85)'; ctx.lineWidth = .45; ctx.setLineDash([1.2, 1]);
+    ctx.beginPath(); ctx.moveTo(o.thrown.x, o.thrown.y); o.pred.pts.forEach(([px, py]) => ctx.lineTo(px, py)); ctx.stroke(); ctx.setLineDash([]);
+    const ex = o.pred.x, ey = o.pred.y, c = o.pred.out ? '#e0384b' : '#14a35a';
+    ctx.strokeStyle = c; ctx.lineWidth = .7; ctx.beginPath(); ctx.moveTo(ex - 1.6, ey - 1.6); ctx.lineTo(ex + 1.6, ey + 1.6); ctx.moveTo(ex + 1.6, ey - 1.6); ctx.lineTo(ex - 1.6, ey + 1.6); ctx.stroke();
+    ctx.font = '900 2.3px "Noto Sans KR",sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    const t = o.pred.out ? (o.pred.x > K.BACK ? '이대로면 뒷선 아웃!' : '이대로면 여기서 멈춤(아웃)') : '이대로면 여기서 멈춤';
+    ctx.lineWidth = .7; ctx.strokeStyle = '#fff'; ctx.strokeText(t, Math.min(ex, K.LEN - 10), ey - 2.2); ctx.fillStyle = c; ctx.fillText(t, Math.min(ex, K.LEN - 10), ey - 2.2);
+    ctx.restore();
+  }
   (o.stones || []).forEach((s, i) => { if (!s.out && s.x > x0 - 4 && s.x < x1 + 4) drawStone(ctx, s.x, s.y, STONE_COLORS[s.o] || '#888', i === o.ring, s.o, o.mine != null && s.o === o.mine && i !== o.ring); });
   // 선수들
   if (o.thrown) {
@@ -1250,7 +1271,7 @@ function drawRink(ctx, o) {
   }
 }
 /* 전체 시트 미니맵 */
-function drawMini(cv, stones, cam) {
+function drawMini(cv, stones, cam, pred) {
   const K = CURLK, dpr = Math.min(window.devicePixelRatio || 1, 2), w = cv.clientWidth || 600, h = cv.clientHeight || 40;
   if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
   const c = cv.getContext('2d'), sx = w / K.LEN, sy = h / K.SW;
@@ -1260,6 +1281,7 @@ function drawMini(cv, stones, cam) {
   c.fillStyle = '#e0384b'; c.fillRect(K.HOG - .6, 0, 1.2, K.SW); c.fillRect(K.FHOG - .6, 0, 1.2, K.SW);
   (stones || []).forEach(st => { if (!st.out) { c.fillStyle = STONE_COLORS[st.o]; c.beginPath(); c.ellipse(st.x, st.y, 4.5, 6.5, 0, 0, 7); c.fill(); c.strokeStyle = STONE_DARK[st.o]; c.lineWidth = 1.2; c.stroke(); } });
   c.strokeStyle = '#1d2b3a'; c.lineWidth = 3; c.strokeRect(cam, 1.5, K.VIEW_W, K.SW - 3);
+  if (pred) { const col = pred.out ? '#e0384b' : '#14a35a', x = Math.min(pred.x, K.LEN - 3); c.strokeStyle = col; c.lineWidth = 2.4; c.beginPath(); c.moveTo(x - 5, pred.y - 7); c.lineTo(x + 5, pred.y + 7); c.moveTo(x + 5, pred.y - 7); c.lineTo(x - 5, pred.y + 7); c.stroke(); }
 }
 /* 화살표·안내문 */
 function curlForceInfo(phase, sweep, vel, pushF, coll) {
@@ -1275,12 +1297,26 @@ function curlForceInfo(phase, sweep, vel, pushF, coll) {
   }
   if (v < 0.8) return { label: '⏹ 돌이 멈췄어요', cls: '', force: null };
   const ux = vel.x / v, uy = vel.y / v;
-  if (sweep === 1) return { label: '🧹 앞을 쓸어 마찰력이 작아짐 → 덜 느려져 더 멀리 가요', cls: 'down', force: { x: -ux, y: -uy, len: 5, label: '마찰력(작아짐)' } };
+  if (sweep === 1) return { label: '🧹 앞을 쓸어 마찰력이 작아짐 → 덜 느려져 ✕(멈출 곳)가 앞으로 가요', cls: 'down', force: { x: -ux, y: -uy, len: 5, label: '마찰력(작아짐)' } };
   if (sweep === 2 || sweep === 3) {
     const lat = sweep === 2 ? 1 : -1, fr = curlDecel(v, sweep);
-    return { label: '🧹 한쪽을 쓸어 비스듬한 힘 → 속력과 운동 방향이 모두 변해요', cls: 'both', force: { x: -ux * fr + uy * lat * CURLK.LAT, y: -uy * fr - ux * lat * CURLK.LAT, len: 9, label: '힘' } };
+    return { label: '🧹 한쪽을 쓸어 비스듬한 힘 → 그쪽으로 휘며 속력과 운동 방향이 모두 변해요', cls: 'both', force: { x: -ux * fr + uy * lat * CURLK.LAT, y: -uy * fr - ux * lat * CURLK.LAT, len: 9, label: '힘' } };
   }
   return { label: '🧊 마찰력이 운동 반대 방향 → 속력이 점점 느려져요', cls: 'down', force: { x: -ux, y: -uy, len: 8, label: '마찰력' } };
+}
+/* 지금 스윕을 멈추면 돌이 어디서 멈출지 미리 계산 (다른 돌과의 충돌은 빼고, 옆벽 튕김은 포함) */
+function curlPredict(st) {
+  const K = CURLK, me = { x: st.x, y: st.y, vx: st.vx, vy: st.vy }, pts = [], h = 1 / 30;
+  for (let i = 0; i < 1200; i++) {
+    const v = Math.hypot(me.vx, me.vy); if (v < 0.6) break;
+    const nv = Math.max(0, v - curlDecel(v, 0) * h); me.vx *= nv / v; me.vy *= nv / v;
+    me.x += me.vx * h; me.y += me.vy * h;
+    if (me.y < K.R && me.vy < 0) { me.y = K.R; me.vy = -me.vy * K.WALL_E; me.vx *= 0.92; }
+    else if (me.y > K.SW - K.R && me.vy > 0) { me.y = K.SW - K.R; me.vy = -me.vy * K.WALL_E; me.vx *= 0.92; }
+    if (me.x - K.R > K.BACK) return { pts, x: me.x, y: me.y, out: true };
+    if (i % 3 === 0) pts.push([me.x, me.y]);
+  }
+  return { pts, x: me.x, y: me.y, out: me.x < K.FHOG };
 }
 /* 카메라: 밀 때는 출발점, 미끄러질 때는 돌을 따라, 나머지는 과녁 쪽 */
 function camTarget(phase, x) {
@@ -1322,7 +1358,7 @@ function replayState(r, dt, speed) {
 function makeViewer(api) {
   const V = {
     id: null, v: null, last: -1, rp: null, q: [], mine: new Set(), stones: [], gotAt: 0, liveBusy: false, applying: false,
-    reset(id) { V.id = id; V.v = null; V.last = -1; V.rp = null; V.q = []; V.mine = new Set(); V.stones = []; },
+    reset(id) { V.id = id; V.v = null; V.last = -1; V.rp = null; V.q = []; V.mine = new Set(); V.stones = []; V.passedNo = null; V.skipSent = null; },
     busy() { return !!(V.rp || V.q.length); },
     myIdx() { return V.v && V.v.my_idx != null ? V.v.my_idx : -1; },
     nickOf(i) { return V.v && V.v.players[i] ? V.v.players[i].nick : ''; },
@@ -1330,6 +1366,12 @@ function makeViewer(api) {
       if (V.applying) return; V.applying = true;
       try {
         if (V.id !== v.id) V.reset(v.id);
+        if (V.v && v.replays !== V.v.replays) {   // 결정전 다시 하기
+          V.reset(v.id); V.v = v; V.gotAt = performance.now(); V.last = v.throw_no; V.stones = v.stones || [];
+          toast('🔁 아무도 과녁에 넣지 못했어요! 결정전이라 처음부터 다시 해요', 4500);
+          if (api.onReplay) api.onReplay();
+          return;
+        }
         const first = V.last < 0;
         V.v = v; V.gotAt = performance.now();
         if (first) { V.last = v.throw_no; if (!V.busy()) V.stones = v.stones || []; return; }
@@ -1366,8 +1408,10 @@ function makeViewer(api) {
     frame(dt) {
       if (!V.rp && V.q.length) V.rp = V.q.shift();
       const r = V.rp; if (!r) return null;
-      if (r.live && !r.rep.final && r.rep.f.length < 14 && r.t === 0) return null;  // 조금 모았다가 재생
-      const st = replayState(r, dt, V.q.length ? 2 : 1);
+      if (r.live && !r.rep.final && r.rep.f.length < 5 && r.t === 0) return null;  // 아주 조금만 모았다가 바로 재생
+      const lag = (r.rep.f.length - 1) / 20 - r.t;   // 받아 둔 움직임보다 얼마나 늦게 보여 주고 있는지(초)
+      const speed = V.q.length ? 2.5 : lag > 1.2 ? 2 : lag > 0.5 ? 1.35 : 1;   // 늦어지면 빨리 감아 따라잡기
+      const st = replayState(r, dt, speed);
       if (r.done) { V.rp = null; if (!V.q.length && V.v) V.stones = V.v.stones || []; }
       return Object.assign(st, { nick: r.nick, color: r.color, hist: r.hist, live: r.live });
     }
@@ -1383,7 +1427,8 @@ APP.modules.curl = (() => {
   let info = null, spectId = null, dismissed = new Set(), polling = false, pollTimer = null, liveTimer = null, shownResult = null;
   const viewer = makeViewer({
     getThrow: (id, no) => rpc('mot_curl_get_throw', { token: APP.token, match_id: id, throw_no: no }),
-    live: (id, no, since) => rpc('mot_curl_live_get', { token: APP.token, match_id: id, throw_no: no, since })
+    live: (id, no, since) => rpc('mot_curl_live_get', { token: APP.token, match_id: id, throw_no: no, since }),
+    onReplay: () => { sim = null; shownResult = null; }
   });
 
   /* ---------- 내가 던지기 ---------- */
@@ -1433,7 +1478,7 @@ APP.modules.curl = (() => {
     }
     // 친구들에게 실시간으로 보내기 (0.7초마다)
     s.upT += dt;
-    if (s.record && s.upT > 0.7 && !s.upBusy && s.frames.length > s.sent && s.phase !== 'end') {
+    if (s.record && s.upT > 0.3 && !s.upBusy && s.frames.length > s.sent && s.phase !== 'end') {
       s.upT = 0; s.upBusy = true; const start = s.sent, chunk = s.frames.slice(start, start + 150);
       rpc('mot_curl_live_put', { token: APP.token, match_id: s.matchId, throw_no: s.throwNo, o: s.stones.map(x => x.o), start, frames: chunk })
         .then(r => { if (r && r.n >= 0) s.sent = r.n; }).catch(() => { }).finally(() => { s.upBusy = false; });
@@ -1507,9 +1552,10 @@ APP.modules.curl = (() => {
   }
 
   /* ---------- 서버와 맞추기 ---------- */
+  // 내 차례 시간은 내가 실제로 돌을 받은 순간부터 잼 (앞사람 장면을 보는 동안은 흐르지 않음)
   function myTurnLeft() {
-    const v = viewer.v; if (!v || v.secs_left == null) return 99;
-    return v.secs_left - (performance.now() - viewer.gotAt) / 1000;
+    if (sim && sim.turnT0) return K.TURN - (performance.now() - sim.turnT0) / 1000;
+    return 99;
   }
   async function poll() {
     if (!active || polling || APP.preview || !APP.token || document.hidden) return;
@@ -1551,11 +1597,17 @@ APP.modules.curl = (() => {
   function afterView() {
     const v = viewer.v; if (!v) return;
     const myIdx = viewer.myIdx();
-    if (mode === 'match' && v.status === 'playing' && v.cur_idx === myIdx && !viewer.busy() && !sim && myTurnLeft() > 0) {
-      sim = newSim(v.stones || [], myIdx, true); sim.throwNo = v.throw_no; sim.matchId = v.id;
+    if (mode === 'match' && v.status === 'playing' && v.cur_idx === myIdx && !viewer.busy() && !sim && viewer.passedNo !== v.throw_no) {
+      sim = newSim(v.stones || [], myIdx, true); sim.throwNo = v.throw_no; sim.matchId = v.id; sim.turnT0 = performance.now(); cam = 0;   // 내 차례가 되면 화면을 바로 출발점으로
       toast('🥌 내 차례! 돌을 밀어 보세요');
     }
-    if (sim && sim.phase === 'aim' && mode === 'match' && (v.cur_idx !== myIdx || v.status !== 'playing')) sim = null;
+    if (sim && sim.phase === 'aim' && mode === 'match' && (v.cur_idx !== myIdx || v.status !== 'playing' || v.throw_no !== sim.throwNo)) sim = null;
+    // 내 시간이 다 되면 스스로 차례 넘기기
+    if (sim && sim.phase === 'aim' && mode === 'match' && myTurnLeft() <= 0) {
+      const no = sim.throwNo; viewer.passedNo = no; sim = null;
+      toast('⌛ 시간이 다 되어 차례가 넘어갔어요');
+      rpc('mot_curl_skip', { token: APP.token, match_id: v.id, throw_no: no }).catch(() => { });
+    }
     if (mode === 'match' && v.status === 'playing' && myIdx >= 0 && v.cur_idx !== myIdx && v.secs_left < -45 && viewer.skipSent !== v.throw_no) {
       viewer.skipSent = v.throw_no; rpc('mot_curl_skip', { token: APP.token, match_id: v.id, throw_no: v.throw_no }).catch(() => { });
     }
@@ -1567,7 +1619,7 @@ APP.modules.curl = (() => {
     const chips = $('#curlChips'), title = $('#curlTitle'), v = viewer.v;
     if (mode === 'practice' || !v) { title.textContent = mode === 'practice' ? '🥌 컬링 연습' : '🥌 컬링 대결'; chips.innerHTML = ''; $('#curlTimer').textContent = ''; return; }
     const myIdx = viewer.myIdx(), n = v.players.length;
-    title.textContent = (mode === 'spectate' ? '👀 관전 중 · ' : '🥌 ') + v.round + '판';
+    title.textContent = (mode === 'spectate' ? '👀 관전 중 · ' : '🥌 ') + v.round + '판' + (v.decider ? ' · 🏅 결정전' : '') + (v.replays ? ' (다시 ' + v.replays + '번째)' : '');
     const thrownBy = i => Math.floor(v.throw_no / n) + (v.throw_no % n > i ? 1 : 0);
     chips.innerHTML = v.players.map(p => '<span class="pchip' + (v.cur_idx === p.idx && v.status === 'playing' ? ' turn' : '') + '">' +
       '<span class="dot" style="background:' + STONE_COLORS[p.idx] + '"></span>' + esc(p.nick) + (p.idx === myIdx ? ' (나)' : '') +
@@ -1600,10 +1652,11 @@ APP.modules.curl = (() => {
     let html = '<div class="jua" style="font-size:30px">경기 결과</div>';
     (v.ranks || []).forEach(r => {
       const p = v.players[r.idx];
-      html += '<div class="rank-row">' + medal[r.rank - 1] + ' <span class="dot" style="display:inline-block;width:18px;height:18px;border-radius:50%;background:' + STONE_COLORS[r.idx] + '"></span> ' +
+      html += '<div class="rank-row">' + (v.winner_idx == null ? '❌' : medal[r.rank - 1]) + ' <span class="dot" style="display:inline-block;width:18px;height:18px;border-radius:50%;background:' + STONE_COLORS[r.idx] + '"></span> ' +
         esc(p.nick) + (r.idx === myIdx ? ' (나)' : '') + ' <small style="color:var(--sub);font-size:15px">' + (r.in ? '과녁 속 돌 ' + r.in + '개' : '과녁 속 돌 없음') + '</small></div>';
     });
-    if (mode === 'match') html += '<div style="font-size:20px;font-weight:900;margin:8px 0">' + (v.winner_idx === myIdx ? '🎉 1등! 다음 판에 진출해요!' : '아쉬워요! 다음 판을 함께 응원해요 📣') + '</div>';
+    if (v.winner_idx == null) html += '<div style="font-size:20px;font-weight:900;margin:8px 0;color:#c0283b">😢 아무도 과녁에 넣지 못해 모두 탈락이에요</div>';
+    else if (mode === 'match') html += '<div style="font-size:20px;font-weight:900;margin:8px 0">' + (v.winner_idx === myIdx ? '🎉 1등! 다음 판에 진출해요!' : '아쉬워요! 다음 판을 함께 응원해요 📣') + '</div>';
     html += '<button class="btn" id="curlResOk">확인</button>';
     showOverlay(html);
     $('#curlResOk').onclick = () => { dismissed.add(v.id); if (spectId === v.id) spectId = null; hideOverlay(); goPractice(); poll(); };
@@ -1638,7 +1691,7 @@ APP.modules.curl = (() => {
     const inMatch = mode === 'match';
     el.innerHTML = rounds.map(r => '<div class="bk-round"><h4>' + r.round + '판</h4>' + r.matches.map(m => {
       const st = m.status === 'ready' ? '대기' : m.status === 'playing' ? '경기 중 ' + m.throw_no + '/' + m.total : '끝';
-      const names = m.nicks.map(n => n === m.winner_nick ? '<span class="w">🏆' + esc(n) + '</span>' : esc(n)).join(' vs ');
+      const names = m.nicks.map(n => n === m.winner_nick ? '<span class="w">🏆' + esc(n) + '</span>' : esc(n)).join(' vs ') + (m.status === 'done' && !m.winner_nick ? ' <b style="color:#c0283b">· 모두 탈락</b>' : '');
       const mine = info.my_match === m.id;
       const canWatch = !inMatch && !mine && m.status === 'playing';
       return '<div class="bk-match' + (mine ? ' mine' : '') + '">' + names + ' <small style="color:var(--sub)">· ' + st + '</small>' +
@@ -1662,9 +1715,11 @@ APP.modules.curl = (() => {
       else if (sim.phase === 'end') { camGoal = me.out ? K.LEN - K.VIEW_W : camTarget(1, me.x); }
       else if (!me.out) {
         const vel = { x: me.vx, y: me.vy }, ph = sim.phase === 'push' ? 0 : 1;
-        Object.assign(draw, { thrown: me, vel, phase: ph, sweep: sim.sweep, pip: ph === 0 });
+        Object.assign(draw, { thrown: me, vel, phase: ph, sweep: sim.sweep, pip: ph === 0, pred: ph === 1 ? curlPredict(me) : null });
         fi = curlForceInfo(ph, sim.sweep, vel, sim.pushF, sim.collT > 0 ? sim.collK : 0); draw.force = fi.force;
         camGoal = camTarget(ph, me.x);
+        if (draw.pred && !draw.pred.out) camGoal = clamp(Math.max(camGoal, draw.pred.x - K.VIEW_W + 14), 0, K.LEN - K.VIEW_W);
+        if (draw.pred && me.x < draw.pred.x - K.VIEW_W + 20) camGoal = clamp(me.x - 8, 0, K.LEN - K.VIEW_W);
       } else camGoal = K.LEN - K.VIEW_W;
       hist = sim.hist;
     } else if (fr) {
@@ -1677,7 +1732,7 @@ APP.modules.curl = (() => {
     if (sim && sim.phase === 'push') cam = 0; else cam += (camGoal - cam) * Math.min(1, dt * 2.5);
     draw.cam = cam; draw.flash = (fi && fi.flash) || '';
     drawRink(G.ctx, draw);
-    drawMini(mini, draw.stones, cam);
+    drawMini(mini, draw.stones, cam, draw.pred);
     const lab = $('#curlState'), txt = fi ? fi.label : (mode === 'practice' ? '' : '경기를 지켜보는 중');
     if (lab.textContent !== txt) lab.textContent = txt;
     lab.className = 'state-label ' + (fi ? fi.cls : '');
@@ -1685,6 +1740,8 @@ APP.modules.curl = (() => {
     $('#curlSpeedBar').style.width = clamp(v / K.VMAX * 100, 0, 100) + '%';
     $('#curlSpeedNum').textContent = (v / 10).toFixed(1);
     drawSpark(graphCv, hist, K.VMAX);
+    if (mode === 'match' && !sim && !fr && viewer.v) afterView();
+    else if (sim && sim.phase === 'aim' && mode === 'match' && myTurnLeft() <= 0) afterView();
     renderSweep(); renderTimerMsg(fr); maybeShowResult();
   }
   function resize() { G = fitCanvas(cv, K.VIEW_W, K.VIEW_H, window.innerHeight * 0.55); }
@@ -1695,8 +1752,8 @@ APP.modules.curl = (() => {
       active = true; LOOPS.add(loop); requestAnimationFrame(resize);
       if (mode === 'practice') ensurePracticeSim();
       renderLobby();
-      poll(); pollTimer = setInterval(poll, 1500);
-      liveTimer = setInterval(() => { if (active && mode !== 'practice' && !document.hidden) viewer.pollLive(); }, 700);
+      poll(); pollTimer = setInterval(poll, 1000);
+      liveTimer = setInterval(() => { if (active && mode !== 'practice' && !document.hidden) viewer.pollLive(); }, 400);
     },
     hide() { active = false; LOOPS.delete(loop); clearInterval(pollTimer); clearInterval(liveTimer); sweepNow = 0; },
     resize
@@ -2269,7 +2326,7 @@ const TEACHER = (() => {
       if (t.status === 'champion') h += '<div style="text-align:center;margin:10px 0"><div class="champ">🏆 ' + esc(t.champion_nick) + '</div><span class="sid">' + (t.champion_sid || '') + '</span> 최종 우승!</div>';
       h += r.rounds.slice().reverse().map(rd => '<h4 style="margin:12px 0 4px">' + rd.round + '판</h4><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px">' +
         rd.matches.map(m => '<div class="t-match"><div>' + m.nicks.map((n, i) => (m.sids[i] === m.winner_sid ? '🏆<b>' : '') + esc(n) + ' <span class="sid">' + m.sids[i] + '</span>' + (m.sids[i] === m.winner_sid ? '</b>' : '')).join('<br>') + '</div>' +
-          '<div style="margin-top:6px;font-size:15px">' + (m.status === 'ready' ? '대기' : m.status === 'playing' ? '경기 중 ' + m.throw_no + '/' + m.total : '끝') + '</div>' +
+          '<div style="margin-top:6px;font-size:15px">' + (m.status === 'ready' ? '대기' : m.status === 'playing' ? '경기 중 ' + m.throw_no + '/' + m.total : (m.winner_nick ? '끝' : '끝 · ❌ 모두 탈락')) + '</div>' +
           '<div style="margin-top:6px;display:flex;gap:6px"><button class="btn ghost" style="padding:6px 10px;font-size:14px" data-w="' + m.id + '">👀 관전</button>' +
           (m.status !== 'done' && t.status === 'playing' ? '<button class="btn red" style="padding:6px 10px;font-size:14px" data-f="' + m.id + '">지금 순위로 끝내기</button>' : '') + '</div></div>').join('') + '</div>').join('');
     }
@@ -2319,7 +2376,7 @@ const TEACHER = (() => {
       drawRink(WG.ctx, d); drawMini($('#wMini', md.box), d.stones, cam);
       const el = $('#wState', md.box), tx = fi ? (fr.live ? '🔴 실시간 · ' : '📺 ') + fr.nick + ' — ' + fi.label : ''; if (el.textContent !== tx) el.textContent = tx; el.className = 'state-label ' + (fi ? fi.cls : '');
     }
-    LOOPS.add(wl); pull(); const iv = setInterval(pull, 1500), lv = setInterval(() => V.pollLive(), 700);
+    LOOPS.add(wl); pull(); const iv = setInterval(pull, 1000), lv = setInterval(() => V.pollLive(), 400);
     $('#wX', md.box).onclick = () => { LOOPS.delete(wl); clearInterval(iv); clearInterval(lv); md.close(); };
   }
 
@@ -2335,7 +2392,7 @@ const TEACHER = (() => {
         if (t.status === 'champion') h += '<div style="text-align:center;margin:30px 0"><div style="font-size:120px">🏆</div><div class="champ" style="font-size:80px;color:#ffe28a;text-shadow:0 5px 0 #b07a00">' + esc(t.champion_nick) + '</div><div style="font-size:36px;font-weight:900">최종 우승을 축하해요!</div></div>';
         h += '<div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:16px">' + r.rounds.map(rd => '<div class="bk-round" style="flex:1;min-width:280px"><h4>' + rd.round + '판</h4>' +
           rd.matches.map(m => '<div class="bk-match" style="margin:8px 0">' + m.nicks.map((n, i) => m.sids[i] === m.winner_sid ? '<span class="w">🏆 ' + esc(n) + '</span>' : esc(n)).join('<br>') +
-            '<div style="font-size:18px;opacity:.8">' + (m.status === 'ready' ? '대기' : m.status === 'playing' ? '경기 중 ' + m.throw_no + '/' + m.total : '끝') + '</div></div>').join('') + '</div>').join('') + '</div>';
+            '<div style="font-size:18px;opacity:.8">' + (m.status === 'ready' ? '대기' : m.status === 'playing' ? '경기 중 ' + m.throw_no + '/' + m.total : (m.winner_nick ? '끝' : '끝 · ❌ 모두 탈락')) + '</div></div>').join('') + '</div>').join('') + '</div>';
       }
       tv.innerHTML = h; $('#tvX').onclick = () => { clearInterval(iv); tv.classList.add('hide'); };
     };

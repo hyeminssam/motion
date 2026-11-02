@@ -218,7 +218,7 @@ table.list td{border-bottom:1px solid var(--line); padding:8px}
     <button class="btn big" style="width:100%" id="joinBtn">입장하기</button>
     <div style="display:flex; gap:8px; justify-content:center; margin-top:16px; flex-wrap:wrap">
       <button class="btn gray" id="teacherBtn1">👩‍🏫 교사 모드</button>
-      <button class="btn gray hide" id="noCfgBtn">설정 없이 둘러보기</button>
+      <button class="btn ghost hide" id="guestBtn">👀 로그인 없이 둘러보기</button>
     </div>
   </div>
   <footer class="copy"></footer>
@@ -226,7 +226,7 @@ table.list td{border-bottom:1px solid var(--line); padding:8px}
 
 <!-- ============ 앱 ============ -->
 <section id="app" class="hide">
-  <div id="previewBar" class="preview-bar hide">👀 수업 화면 보기(미리보기) — 기록이 저장되지 않아요 <button class="btn gray" style="padding:4px 12px;font-size:15px;margin-left:8px" id="exitPreview">닫기</button></div>
+  <div id="previewBar" class="preview-bar hide"><span id="previewText">👀 수업 화면 보기(미리보기) — 기록이 저장되지 않아요</span> <button class="btn gray" style="padding:4px 12px;font-size:15px;margin-left:8px" id="exitPreview">닫기</button></div>
   <header>
     <div class="hd">
       <div class="logo">🥌 운동 상태 탐구실<small>힘이 작용한 물체의 운동 상태</small></div>
@@ -340,7 +340,7 @@ table.list td{border-bottom:1px solid var(--line); padding:8px}
                 <button class="sweep" data-sw="1">🧹 앞<br>쓸기</button>
                 <button class="sweep" data-sw="3">🧹 아래쪽<br>쓸기</button>
               </div>
-              <div style="font-size:14px;color:var(--sub);margin-top:6px">돌이 멈출 때까지 계속 쓸 수 있어요! 얼음 위 <b style="color:#14a35a">✕</b>는 "지금 쓸기를 멈추면 돌이 멈출 곳"이에요. 앞을 쓸면 ✕가 앞으로, 위·아래쪽을 쓸면 그쪽으로 움직여요. (키보드: ↑ → ↓)</div>
+              <div style="font-size:14px;color:var(--sub);margin-top:6px">돌이 멈출 때까지 계속 쓸 수 있어요! 앞을 쓸면 마찰력이 작아져 더 멀리 가고, 위·아래쪽을 쓸면 그쪽으로 휘어요. 쓰는 동안 돌 앞 얼음이 보라색으로 빛나요. (키보드: ↑ → ↓)</div>
             </div>
           </div>
         </div>
@@ -554,11 +554,11 @@ requestAnimationFrame(_frame);
 
 /* ================= 앱 상태 ================= */
 const APP = {
-  token: null, me: null, preview: false, previewFromTeacher: false, tab: 'lab',
+  token: null, me: null, preview: false, previewFromTeacher: false, guest: false, tab: 'lab',
   open: { lab: false, curl: false, quiz: false, park: false },
   prog: {}, modules: {}
 };
-function isOpen(tab) { return APP.preview || APP.open[tab]; }
+function isOpen(tab) { return APP.guest ? !!APP.open[tab] : (APP.preview || APP.open[tab]); }
 async function saveProg(key, val) {
   if (key === 'lab' || key === 'park') {
     const cur = new Set(APP.prog[key] || []); val.forEach(v => cur.add(v)); APP.prog[key] = [...cur];
@@ -579,7 +579,31 @@ function fillCopyright() {
 /* ---------- 입장 ---------- */
 function showJoin() {
   $('#app').classList.add('hide'); $('#joinScreen').classList.remove('hide');
-  if (!HAS_CFG) { $('#cfgWarn').classList.remove('hide'); $('#noCfgBtn').classList.remove('hide'); }
+  if (!HAS_CFG) $('#cfgWarn').classList.remove('hide');
+  checkGuest();
+}
+/* 로그인 없이 둘러보기: 선생님이 켰을 때만 버튼이 보임 */
+let _guestPoll = null;
+async function checkGuest() {
+  if (!HAS_CFG) return;
+  try {
+    const r = await rpc('mot_public', {});
+    $('#guestBtn').classList.toggle('hide', !r.guest);
+    if (r.guest) APP.open = Object.assign({ lab: false, curl: false, quiz: false, park: false }, r.open || {});
+  } catch (e) { $('#guestBtn').classList.add('hide'); }
+  clearTimeout(_guestPoll);
+  if (!$('#joinScreen').classList.contains('hide')) _guestPoll = setTimeout(checkGuest, 10000);
+}
+async function startGuest() {
+  try {
+    const r = await rpc('mot_public', {});
+    if (!r.guest) { toast('지금은 둘러보기가 닫혀 있어요.'); $('#guestBtn').classList.add('hide'); return; }
+    APP.open = Object.assign({ lab: false, curl: false, quiz: false, park: false }, r.open || {});
+  } catch (e) { toast(e.message); return; }
+  clearTimeout(_guestPoll);
+  APP.guest = true; APP.preview = true; APP.previewFromTeacher = false;
+  APP.me = { nick: '둘러보기', class_no: 0, prog: {} }; APP.prog = {};
+  showApp();
 }
 function logoutForced() {
   store.del('mot_token_v1'); APP.token = null; APP.me = null;
@@ -609,7 +633,7 @@ async function loadMe() {
 }
 function renderMe() {
   if (!APP.me) return;
-  $('#meLabel').textContent = APP.preview ? '👀 미리보기' : (APP.me.class_no + '반 · ' + APP.me.nick);
+  $('#meLabel').textContent = APP.guest ? '👀 둘러보기' : APP.preview ? '👀 미리보기' : (APP.me.class_no + '반 · ' + APP.me.nick);
   $('#nickReqBtn').textContent = APP.me.nick_req ? '변경 요청 중: ' + APP.me.nick_req : '닉네임 변경 요청';
   $('#nickReqBtn').classList.toggle('hide', APP.preview);
   $$('#tabs .tab').forEach(b => {
@@ -623,6 +647,16 @@ let _mePoll = null;
 function startMePoll() {
   stopMePoll();
   _mePoll = setInterval(async () => {
+    if (APP.guest && !document.hidden) {   // 둘러보기: 선생님이 닫으면 입장 화면으로
+      try {
+        const r = await rpc('mot_public', {});
+        if (!r.guest) { toast('선생님이 둘러보기를 닫았어요. 학번과 닉네임으로 입장해 주세요.', 4500); exitPreview(); return; }
+        const before = JSON.stringify(APP.open);
+        APP.open = Object.assign({ lab: false, curl: false, quiz: false, park: false }, r.open || {});
+        if (before !== JSON.stringify(APP.open)) setTab(APP.tab, true);
+      } catch (e) { }
+      return;
+    }
     if (APP.preview || !APP.token || document.hidden) return;
     try {
       const before = JSON.stringify(APP.open);
@@ -636,6 +670,8 @@ function stopMePoll() { if (_mePoll) clearInterval(_mePoll); _mePoll = null; }
 function showApp() {
   $('#joinScreen').classList.add('hide'); $('#app').classList.remove('hide');
   $('#previewBar').classList.toggle('hide', !APP.preview);
+  $('#previewText').textContent = APP.guest ? '👀 로그인 없이 둘러보기 — 기록이 저장되지 않고, 컬링은 연습만 할 수 있어요' : '👀 수업 화면 보기(미리보기) — 기록이 저장되지 않아요';
+  $('#exitPreview').textContent = APP.guest ? '입장하러 가기' : '닫기';
   renderMe(); setTab(store.get('mot_tab') || 'lab', true); startMePoll();
 }
 function hideAllModules() { Object.values(APP.modules).forEach(m => m.hide && m.hide()); }
@@ -671,7 +707,7 @@ function startPreview(fromTeacher) {
   showApp();
 }
 function exitPreview() {
-  APP.preview = false; hideAllModules(); stopMePoll();
+  APP.preview = false; APP.guest = false; hideAllModules(); stopMePoll();
   $('#app').classList.add('hide');
   if (APP.previewFromTeacher && TEACHER.pw) { $('#teacher').classList.remove('hide'); TEACHER.render(); }
   else showJoin();
@@ -685,7 +721,7 @@ function initApp() {
   $('#inSid').addEventListener('input', e => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 5); });
   $('#teacherBtn1').onclick = () => TEACHER.login();
   $('#teacherBtn2').onclick = () => { if (APP.preview && APP.previewFromTeacher) exitPreview(); else TEACHER.login(); };
-  $('#noCfgBtn').onclick = () => startPreview(false);
+  $('#guestBtn').onclick = startGuest;
   $('#exitPreview').onclick = exitPreview;
   $('#nickReqBtn').onclick = nickRequestDialog;
   $$('#tabs .tab').forEach(b => b.onclick = () => setTab(b.dataset.tab));
@@ -1234,17 +1270,6 @@ function drawRink(ctx, o) {
     ctx.fillStyle = g2; roundRect(ctx, K.R, side * 2.2 - 2.4, 14, 4.8, 2.4); ctx.fill();
     ctx.restore();
   }
-  // 예상 멈춤 위치 (스윕하면 바뀜)
-  if (o.pred && o.pred.pts.length) {
-    ctx.save(); ctx.strokeStyle = o.pred.out ? 'rgba(224,56,75,.75)' : 'rgba(20,163,90,.85)'; ctx.lineWidth = .45; ctx.setLineDash([1.2, 1]);
-    ctx.beginPath(); ctx.moveTo(o.thrown.x, o.thrown.y); o.pred.pts.forEach(([px, py]) => ctx.lineTo(px, py)); ctx.stroke(); ctx.setLineDash([]);
-    const ex = o.pred.x, ey = o.pred.y, c = o.pred.out ? '#e0384b' : '#14a35a';
-    ctx.strokeStyle = c; ctx.lineWidth = .7; ctx.beginPath(); ctx.moveTo(ex - 1.6, ey - 1.6); ctx.lineTo(ex + 1.6, ey + 1.6); ctx.moveTo(ex + 1.6, ey - 1.6); ctx.lineTo(ex - 1.6, ey + 1.6); ctx.stroke();
-    ctx.font = '900 2.3px "Noto Sans KR",sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-    const t = o.pred.out ? (o.pred.x > K.BACK ? '이대로면 뒷선 아웃!' : '이대로면 여기서 멈춤(아웃)') : '이대로면 여기서 멈춤';
-    ctx.lineWidth = .7; ctx.strokeStyle = '#fff'; ctx.strokeText(t, Math.min(ex, K.LEN - 10), ey - 2.2); ctx.fillStyle = c; ctx.fillText(t, Math.min(ex, K.LEN - 10), ey - 2.2);
-    ctx.restore();
-  }
   (o.stones || []).forEach((s, i) => { if (!s.out && s.x > x0 - 4 && s.x < x1 + 4) drawStone(ctx, s.x, s.y, STONE_COLORS[s.o] || '#888', i === o.ring, s.o, o.mine != null && s.o === o.mine && i !== o.ring); });
   // 선수들
   if (o.thrown) {
@@ -1271,7 +1296,7 @@ function drawRink(ctx, o) {
   }
 }
 /* 전체 시트 미니맵 */
-function drawMini(cv, stones, cam, pred) {
+function drawMini(cv, stones, cam) {
   const K = CURLK, dpr = Math.min(window.devicePixelRatio || 1, 2), w = cv.clientWidth || 600, h = cv.clientHeight || 40;
   if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
   const c = cv.getContext('2d'), sx = w / K.LEN, sy = h / K.SW;
@@ -1281,7 +1306,6 @@ function drawMini(cv, stones, cam, pred) {
   c.fillStyle = '#e0384b'; c.fillRect(K.HOG - .6, 0, 1.2, K.SW); c.fillRect(K.FHOG - .6, 0, 1.2, K.SW);
   (stones || []).forEach(st => { if (!st.out) { c.fillStyle = STONE_COLORS[st.o]; c.beginPath(); c.ellipse(st.x, st.y, 4.5, 6.5, 0, 0, 7); c.fill(); c.strokeStyle = STONE_DARK[st.o]; c.lineWidth = 1.2; c.stroke(); } });
   c.strokeStyle = '#1d2b3a'; c.lineWidth = 3; c.strokeRect(cam, 1.5, K.VIEW_W, K.SW - 3);
-  if (pred) { const col = pred.out ? '#e0384b' : '#14a35a', x = Math.min(pred.x, K.LEN - 3); c.strokeStyle = col; c.lineWidth = 2.4; c.beginPath(); c.moveTo(x - 5, pred.y - 7); c.lineTo(x + 5, pred.y + 7); c.moveTo(x + 5, pred.y - 7); c.lineTo(x - 5, pred.y + 7); c.stroke(); }
 }
 /* 화살표·안내문 */
 function curlForceInfo(phase, sweep, vel, pushF, coll) {
@@ -1297,26 +1321,12 @@ function curlForceInfo(phase, sweep, vel, pushF, coll) {
   }
   if (v < 0.8) return { label: '⏹ 돌이 멈췄어요', cls: '', force: null };
   const ux = vel.x / v, uy = vel.y / v;
-  if (sweep === 1) return { label: '🧹 앞을 쓸어 마찰력이 작아짐 → 덜 느려져 ✕(멈출 곳)가 앞으로 가요', cls: 'down', force: { x: -ux, y: -uy, len: 5, label: '마찰력(작아짐)' } };
+  if (sweep === 1) return { label: '🧹 앞을 쓸어 마찰력이 작아짐 → 덜 느려져 더 멀리 가요', cls: 'down', force: { x: -ux, y: -uy, len: 5, label: '마찰력(작아짐)' } };
   if (sweep === 2 || sweep === 3) {
     const lat = sweep === 2 ? 1 : -1, fr = curlDecel(v, sweep);
     return { label: '🧹 한쪽을 쓸어 비스듬한 힘 → 그쪽으로 휘며 속력과 운동 방향이 모두 변해요', cls: 'both', force: { x: -ux * fr + uy * lat * CURLK.LAT, y: -uy * fr - ux * lat * CURLK.LAT, len: 9, label: '힘' } };
   }
   return { label: '🧊 마찰력이 운동 반대 방향 → 속력이 점점 느려져요', cls: 'down', force: { x: -ux, y: -uy, len: 8, label: '마찰력' } };
-}
-/* 지금 스윕을 멈추면 돌이 어디서 멈출지 미리 계산 (다른 돌과의 충돌은 빼고, 옆벽 튕김은 포함) */
-function curlPredict(st) {
-  const K = CURLK, me = { x: st.x, y: st.y, vx: st.vx, vy: st.vy }, pts = [], h = 1 / 30;
-  for (let i = 0; i < 1200; i++) {
-    const v = Math.hypot(me.vx, me.vy); if (v < 0.6) break;
-    const nv = Math.max(0, v - curlDecel(v, 0) * h); me.vx *= nv / v; me.vy *= nv / v;
-    me.x += me.vx * h; me.y += me.vy * h;
-    if (me.y < K.R && me.vy < 0) { me.y = K.R; me.vy = -me.vy * K.WALL_E; me.vx *= 0.92; }
-    else if (me.y > K.SW - K.R && me.vy > 0) { me.y = K.SW - K.R; me.vy = -me.vy * K.WALL_E; me.vx *= 0.92; }
-    if (me.x - K.R > K.BACK) return { pts, x: me.x, y: me.y, out: true };
-    if (i % 3 === 0) pts.push([me.x, me.y]);
-  }
-  return { pts, x: me.x, y: me.y, out: me.x < K.FHOG };
 }
 /* 카메라: 밀 때는 출발점, 미끄러질 때는 돌을 따라, 나머지는 과녁 쪽 */
 function camTarget(phase, x) {
@@ -1628,7 +1638,7 @@ APP.modules.curl = (() => {
   function renderTimerMsg(fr) {
     const msg = $('#curlMsg'), tm = $('#curlTimer'), v = viewer.v;
     const set = (h) => { if (msg.innerHTML !== h) msg.innerHTML = h; };
-    if (mode === 'practice') { tm.textContent = ''; set(APP.preview ? '👀 미리보기에서는 연습만 할 수 있어요' : '연습 중 — 대회가 시작되면 자동으로 경기장으로 이동해요'); return; }
+    if (mode === 'practice') { tm.textContent = ''; set(APP.preview ? (APP.guest ? '👀 둘러보기에서는 연습만 할 수 있어요' : '👀 미리보기에서는 연습만 할 수 있어요') : '연습 중 — 대회가 시작되면 자동으로 경기장으로 이동해요'); return; }
     if (!v) { set('경기 정보를 불러오는 중…'); return; }
     const myIdx = viewer.myIdx();
     if (fr) { tm.textContent = ''; set((fr.live ? '🔴 실시간 · ' : '📺 다시보기 · ') + esc(fr.nick) + ' 님이 던지고 있어요'); return; }
@@ -1663,7 +1673,7 @@ APP.modules.curl = (() => {
   }
   function renderLobby() {
     const box = $('#curlLobby');
-    if (APP.preview) { box.innerHTML = '<h3>🏟 대기실</h3><p>미리보기에서는 연습만 할 수 있어요. 대회는 교사 모드의 「🥌 컬링 대회」에서 열어요.</p>'; return; }
+    if (APP.preview) { box.innerHTML = APP.guest ? '<h3>🏟 대기실</h3><p>둘러보기에서는 연습만 할 수 있어요. 대회에 참가하려면 위쪽 「입장하러 가기」를 눌러 학번과 닉네임으로 입장하세요.</p>' : '<h3>🏟 대기실</h3><p>미리보기에서는 연습만 할 수 있어요. 대회는 교사 모드의 「🥌 컬링 대회」에서 열어요.</p>'; return; }
     const t = info && info.tourney;
     let h = '<h3>🏟 대기실</h3>';
     if (!t) h += '<p style="font-weight:700">⏳ 선생님이 대회를 열면 시작돼요.<br>그동안 마음껏 연습해 보세요!</p>';
@@ -1715,11 +1725,9 @@ APP.modules.curl = (() => {
       else if (sim.phase === 'end') { camGoal = me.out ? K.LEN - K.VIEW_W : camTarget(1, me.x); }
       else if (!me.out) {
         const vel = { x: me.vx, y: me.vy }, ph = sim.phase === 'push' ? 0 : 1;
-        Object.assign(draw, { thrown: me, vel, phase: ph, sweep: sim.sweep, pip: ph === 0, pred: ph === 1 ? curlPredict(me) : null });
+        Object.assign(draw, { thrown: me, vel, phase: ph, sweep: sim.sweep, pip: ph === 0 });
         fi = curlForceInfo(ph, sim.sweep, vel, sim.pushF, sim.collT > 0 ? sim.collK : 0); draw.force = fi.force;
         camGoal = camTarget(ph, me.x);
-        if (draw.pred && !draw.pred.out) camGoal = clamp(Math.max(camGoal, draw.pred.x - K.VIEW_W + 14), 0, K.LEN - K.VIEW_W);
-        if (draw.pred && me.x < draw.pred.x - K.VIEW_W + 20) camGoal = clamp(me.x - 8, 0, K.LEN - K.VIEW_W);
       } else camGoal = K.LEN - K.VIEW_W;
       hist = sim.hist;
     } else if (fr) {
@@ -1732,7 +1740,7 @@ APP.modules.curl = (() => {
     if (sim && sim.phase === 'push') cam = 0; else cam += (camGoal - cam) * Math.min(1, dt * 2.5);
     draw.cam = cam; draw.flash = (fi && fi.flash) || '';
     drawRink(G.ctx, draw);
-    drawMini(mini, draw.stones, cam, draw.pred);
+    drawMini(mini, draw.stones, cam);
     const lab = $('#curlState'), txt = fi ? fi.label : (mode === 'practice' ? '' : '경기를 지켜보는 중');
     if (lab.textContent !== txt) lab.textContent = txt;
     lab.className = 'state-label ' + (fi ? fi.cls : '');
@@ -2202,7 +2210,7 @@ const TEACHER = (() => {
   let pw = null, tab = 'open', cls = 1, timer = null, data = {}, curlSet = { group: 2, stones: 3 };
   const T = { get pw() { return pw; } };
   const body = () => $('#tBody');
-  const OPEN_LABELS = { lab: '① 해 보기 실험실 (선풍기 실험 + 장애물 코스)', curl: '② 컬링 대결', park: '③ 놀이공원 탐구', quiz: '④ 운동 상태 퀴즈' };
+  const OPEN_LABELS = { lab: '① 해 보기 실험실 (선풍기 실험 + 장애물 코스)', curl: '② 컬링 대결', park: '③ 놀이공원 탐구', quiz: '④ 운동 상태 퀴즈', guest: '학생 입장 화면에 「👀 로그인 없이 둘러보기」 버튼 보이기' };
 
   T.login = () => {
     if (!HAS_CFG) { toast('config.js 설정이 먼저 필요해요. 설치 안내서를 확인해 주세요.', 3500); return; }
@@ -2243,7 +2251,7 @@ const TEACHER = (() => {
   async function rOpen() {
     try { const r = await call('mot_t_login'); data.open = r.open; setBadge(r.nick_reqs); } catch (e) { return; }
     body().innerHTML = '<div class="panel"><h2 style="margin-top:0">활동 열기·닫기</h2><p style="color:var(--sub)">학생 화면에 8초 안에 반영돼요. 닫힌 활동은 🔒로 보여요.</p>' +
-      Object.keys(OPEN_LABELS).map(k => '<div class="toggle-row"><span>' + OPEN_LABELS[k] + '</span><button class="switch' + (data.open[k] ? ' on' : '') + '" data-k="' + k + '" aria-label="열기/닫기"></button></div>').join('') + '</div>';
+      Object.keys(OPEN_LABELS).map(k => (k === 'guest' ? '<h3 style="margin:22px 0 4px">👀 로그인 없이 둘러보기</h3><p style="color:var(--sub);margin:0 0 4px">시험 기간 등에 학생이 입장하지 않고 열린 활동을 볼 수 있게 해요. 기록은 저장되지 않고 컬링은 연습만 돼요.</p>' : '') + '<div class="toggle-row"><span>' + OPEN_LABELS[k] + '</span><button class="switch' + (data.open[k] ? ' on' : '') + '" data-k="' + k + '" aria-label="열기/닫기"></button></div>').join('') + '</div>';
     $$('.switch', body()).forEach(b => b.onclick = async () => {
       try { data.open = await call('mot_t_set_open', { key: b.dataset.k, val: !data.open[b.dataset.k] }); rOpen(); } catch (e) { }
     });

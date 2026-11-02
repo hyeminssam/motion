@@ -353,8 +353,8 @@ table.list td{border-bottom:1px solid var(--line); padding:8px}
               <li><b>손을 떼면</b> 얼음과의 마찰력 때문에 점점 느려져요.</li>
               <li>움직이는 동안 <b>🧹 쓸기</b>로 마찰력을 바꿔 더 멀리 보내거나 휘게 해요.</li>
               <li>다른 돌과 <b>부딪히면</b> 힘을 받아 운동 방향이 바뀌어요.</li>
-              <li>모두 던진 뒤 <b>과녁 한가운데에 가장 가까운 돌</b>의 주인이 1등!</li>
-              <li>아무도 과녁에 넣지 못하면 <b>모두 탈락</b>! (남은 사람이 4명 이하인 <b>결정전</b>에서는 탈락 없이 다시 해요)</li>
+              <li>모두 던진 뒤 살아남은 돌 중 <b>과녁 한가운데에 가장 가까운 돌</b>의 주인이 1등! (과녁 밖이어도 돼요)</li>
+              <li>살아남은 돌이 하나도 없으면 <b>모두 탈락</b>! (남은 사람이 4명 이하인 <b>결정전</b>에서는 탈락 없이 다시 해요)</li>
             </ol>
           </div>
           <div class="card" id="curlBracketCard"><h3>🏆 대진표</h3><div class="bracket" id="curlBracket"><span style="color:var(--sub)">아직 대회가 없어요.</span></div></div>
@@ -1378,7 +1378,7 @@ function makeViewer(api) {
         if (V.id !== v.id) V.reset(v.id);
         if (V.v && v.replays !== V.v.replays) {   // 결정전 다시 하기
           V.reset(v.id); V.v = v; V.gotAt = performance.now(); V.last = v.throw_no; V.stones = v.stones || [];
-          toast('🔁 아무도 과녁에 넣지 못했어요! 결정전이라 처음부터 다시 해요', 4500);
+          toast('🔁 살아남은 돌이 하나도 없어요! 결정전이라 처음부터 다시 해요', 4500);
           if (api.onReplay) api.onReplay();
           return;
         }
@@ -1663,9 +1663,9 @@ APP.modules.curl = (() => {
     (v.ranks || []).forEach(r => {
       const p = v.players[r.idx];
       html += '<div class="rank-row">' + (v.winner_idx == null ? '❌' : medal[r.rank - 1]) + ' <span class="dot" style="display:inline-block;width:18px;height:18px;border-radius:50%;background:' + STONE_COLORS[r.idx] + '"></span> ' +
-        esc(p.nick) + (r.idx === myIdx ? ' (나)' : '') + ' <small style="color:var(--sub);font-size:15px">' + (r.in ? '과녁 속 돌 ' + r.in + '개' : '과녁 속 돌 없음') + '</small></div>';
+        esc(p.nick) + (r.idx === myIdx ? ' (나)' : '') + ' <small style="color:var(--sub);font-size:15px">' + (r.best != null ? '중심까지 ' + (r.best / 10).toFixed(1) + ' m' + (r.in ? ' · 과녁 안' : '') : '남은 돌 없음') + '</small></div>';
     });
-    if (v.winner_idx == null) html += '<div style="font-size:20px;font-weight:900;margin:8px 0;color:#c0283b">😢 아무도 과녁에 넣지 못해 모두 탈락이에요</div>';
+    if (v.winner_idx == null) html += '<div style="font-size:20px;font-weight:900;margin:8px 0;color:#c0283b">😢 살아남은 돌이 하나도 없어 모두 탈락이에요</div>';
     else if (mode === 'match') html += '<div style="font-size:20px;font-weight:900;margin:8px 0">' + (v.winner_idx === myIdx ? '🎉 1등! 다음 판에 진출해요!' : '아쉬워요! 다음 판을 함께 응원해요 📣') + '</div>';
     html += '<button class="btn" id="curlResOk">확인</button>';
     showOverlay(html);

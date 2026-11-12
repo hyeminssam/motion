@@ -152,6 +152,13 @@ footer{max-width:1280px; margin:20px auto 0; padding:16px; text-align:center; co
 
 .rotate-tip{display:none; background:#fff4e5; border-radius:12px; padding:8px 12px; font-weight:900; margin-bottom:8px}
 @media (max-width:600px) and (orientation:portrait){.rotate-tip{display:block}}
+.rank-list{list-style:none; margin:0; padding:0}
+.rank-list li{display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:10px; font-weight:700}
+.rank-list li:nth-child(odd){background:#f6f9fc}
+.rank-list li.me{background:#fff3c4; outline:2px solid #f2c14e}
+.rank-list .rk{width:34px; text-align:center; font-weight:900}
+.rank-list .nm{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.rank-list .tm{font-weight:900; color:#0b78b0}
 /* 퀴즈 */
 .quiz-card{max-width:860px; margin:0 auto}
 .q-progress{height:12px; background:#eef3f8; border-radius:6px; overflow:hidden; margin-bottom:12px}
@@ -312,6 +319,10 @@ table.list td{border-bottom:1px solid var(--line); padding:8px}
           <div class="card">
             <div style="display:flex;justify-content:space-between;font-weight:900"><span>⏱ <span id="courseTime">0.0</span>초</span><span>🎯 최고 기록 <span id="courseBest">-</span></span></div>
             <button class="btn gray" style="width:100%;margin-top:10px" id="courseReset">↺ 처음 위치로</button>
+          </div>
+          <div class="card" id="courseRankCard">
+            <h3 style="display:flex;align-items:center;gap:8px">🏆 전교생 코스 순위 <span style="font-size:14px;color:var(--sub);font-family:'Noto Sans KR'">빠른 순</span></h3>
+            <div id="courseRank" style="font-size:17px">불러오는 중…</div>
           </div>
           <div class="textbook hide" id="courseDone">🎉 도착! 교과서 175쪽 <b>4번</b>: 공이 이동하는 동안 공에 작용한 힘과 관련지어 공의 운동 상태를 짝과 이야기해 보세요.</div>
         </div>
@@ -1033,6 +1044,9 @@ APP.modules.lab = (() => {
       $('#courseDone').classList.remove('hide');
       if (!done.has('course')) { done.add('course'); saveProg('lab', ['course']); }
       toast('🎉 도착 성공! ' + el.toFixed(1) + '초');
+      if (!APP.preview && APP.token && el >= 2) {
+        rpc('mot_course_time', { token: APP.token, secs: Math.round(el * 10) / 10 }).then(renderRank).catch(() => { });
+      }
     }
     function drawObs(ctx, o) {
       ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.18)'; ctx.shadowOffsetY = 5; ctx.shadowBlur = 6;
@@ -1085,7 +1099,28 @@ APP.modules.lab = (() => {
       $('#courseReset').onclick = reset;
     }
     bind();
-    return { tick, resize() { CG = fitCanvas(cvc, CW, CH, window.innerHeight * 0.72); }, reset };
+    /* 🏆 우리 반 순위판 */
+    function renderRank(r) {
+      const box = $('#courseRank'); if (!box || !r) return;
+      if (r.my && r.my.best != null) { const b2 = +r.my.best; if (!best || b2 < best) best = b2; }
+      if (!r.top.length) { box.innerHTML = '<span style="color:var(--sub)">아직 기록이 없어요. 첫 번째 도착자가 되어 보세요! 🚩</span>'; return; }
+      const medal = ['🥇', '🥈', '🥉'];
+      let h = '<ol class="rank-list">' + r.top.map(x => '<li class="' + (x.me ? 'me' : '') + '"><span class="rk">' + (medal[x.rank - 1] || x.rank) + '</span><span class="nm"><small style="color:var(--sub)">' + (+x.cls) + '반</small> ' + esc(x.nick) + (x.me ? ' (나)' : '') + '</span><span class="tm">' + (+x.best).toFixed(1) + '초</span></li>').join('') + '</ol>';
+      if (r.my && !r.top.some(x => x.me)) h += '<div style="margin-top:8px;font-weight:900">내 순위: ' + r.my.rank + '등 / ' + r.total + '명 · ' + (+r.my.best).toFixed(1) + '초</div>';
+      else if (!r.my) h += '<div style="margin-top:8px;color:var(--sub)">도착하면 내 기록이 올라가요!</div>';
+      else h += '<div style="margin-top:8px;color:var(--sub)">기록한 학생 ' + r.total + '명 (전체 반)</div>';
+      box.innerHTML = h;
+    }
+    let rankTimer = null;
+    function loadRank() {
+      const box = $('#courseRank');
+      if (APP.preview) { box.innerHTML = '<span style="color:var(--sub)">' + (APP.guest ? '둘러보기' : '미리보기') + '에서는 순위가 보이지 않고 기록도 올라가지 않아요.</span>'; return; }
+      if (!APP.token) return;
+      rpc('mot_course_rank', { token: APP.token }).then(renderRank).catch(() => { });
+    }
+    function rankOn() { loadRank(); clearInterval(rankTimer); rankTimer = setInterval(() => { if (!document.hidden) loadRank(); }, 10000); }
+    function rankOff() { clearInterval(rankTimer); rankTimer = null; }
+    return { tick, resize() { CG = fitCanvas(cvc, CW, CH, window.innerHeight * 0.72); }, reset, rankOn, rankOff };
   })();
 
   /* ---------- 연결 ---------- */
@@ -1108,7 +1143,7 @@ APP.modules.lab = (() => {
     $('#labCourse').classList.toggle('hide', sub !== 'course' || !courseOpen);
     $('#labCourseLock').classList.toggle('hide', sub !== 'course' || courseOpen);
   }
-  $$('.sub-tab').forEach(b => b.onclick = () => { sub = b.dataset.sub; renderSub(); resize(); });
+  $$('.sub-tab').forEach(b => b.onclick = () => { sub = b.dataset.sub; renderSub(); resize(); if (sub === 'course' && isOpen('course')) COURSE.rankOn(); else COURSE.rankOff(); });
   function resize() {
     if (sub === 'exp') G = fitCanvas(cv, W, H, window.innerHeight * 0.68); else if (isOpen('course')) COURSE.resize();
   }
@@ -1117,9 +1152,10 @@ APP.modules.lab = (() => {
       active = true;
       done = new Set(APP.prog.lab || []);
       renderFanBtns(); renderTable(); renderSub(); LOOPS.add(loop);
+      if (sub === 'course' && isOpen('course')) COURSE.rankOn(); else COURSE.rankOff();
       requestAnimationFrame(resize);
     },
-    hide() { active = false; LOOPS.delete(loop); },
+    hide() { active = false; LOOPS.delete(loop); COURSE.rankOff(); },
     resize
   };
 })();
@@ -2273,8 +2309,8 @@ const TEACHER = (() => {
   /* 학생 현황 */
   async function rStu() {
     body().innerHTML = '<div class="panel"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><h2 style="margin:0">학생 현황</h2>' + classSel() +
-      '<button class="btn gray" id="tRef">새로고침</button></div><div id="tStu" style="margin-top:12px;overflow:auto">불러오는 중…</div></div>';
-    bindCls(rStu); $('#tRef').onclick = loadStu; loadStu();
+      '<button class="btn gray" id="tRef">새로고침</button><span style="flex:1"></span><button class="btn orange" id="tCourseTv">🏁 장애물 코스 순위 크게 보기(TV)</button></div><div id="tStu" style="margin-top:12px;overflow:auto">불러오는 중…</div></div>';
+    bindCls(rStu); $('#tRef').onclick = loadStu; $('#tCourseTv').onclick = openCourseTV; loadStu();
     timer = setInterval(loadStu, 10000);
   }
   async function loadStu() {
@@ -2285,7 +2321,7 @@ const TEACHER = (() => {
     if (!r.students.length) { box.innerHTML = '<p>아직 입장한 학생이 없어요.</p>'; return; }
     box.innerHTML = '<table class="list"><tr><th>학번</th><th>닉네임</th><th>실험 ①②③④</th><th>장애물 코스</th><th>놀이공원</th><th>퀴즈 최고</th><th></th></tr>' +
       r.students.map(s => '<tr><td><span class="online-dot' + (s.recent ? ' on' : '') + '"></span>' + s.sid + '</td><td><b>' + esc(s.nick) + '</b></td>' +
-        '<td>' + ['back', 'front', 'side', 'oblique'].map(k => ck(s.prog.lab, k)).join(' ') + '</td><td>' + ck(s.prog.lab, 'course') + '</td>' +
+        '<td>' + ['back', 'front', 'side', 'oblique'].map(k => ck(s.prog.lab, k)).join(' ') + '</td><td>' + (s.prog.course_best != null ? '🏁 ' + (+s.prog.course_best).toFixed(1) + '초' : ck(s.prog.lab, 'course')) + '</td>' +
         '<td>' + ((s.prog.park || []).length) + '/6</td><td>' + (s.prog.quiz ? s.prog.quiz.score + '/' + s.prog.quiz.total : '-') + '</td>' +
         '<td style="white-space:nowrap"><button class="btn ghost" style="padding:6px 10px;font-size:14px" data-ren="' + s.sid + '">닉네임 바꾸기</button> ' +
         '<button class="btn red" style="padding:6px 10px;font-size:14px" data-del="' + s.sid + '">기록 삭제</button></td></tr>').join('') + '</table>' +
@@ -2402,6 +2438,22 @@ const TEACHER = (() => {
   }
 
   /* TV 크게 보기 (닉네임만) */
+  /* 🏁 장애물 코스 순위 TV (닉네임만) */
+  function openCourseTV() {
+    const tv = $('#tv'); tv.classList.remove('hide');
+    const medal = ['🥇', '🥈', '🥉'];
+    const draw = async () => {
+      let r; try { r = await rpc('mot_t_course_rank', { pw }); } catch (e) { return; }
+      let h = '<div style="display:flex;align-items:center;gap:12px"><h1 class="jua" style="margin:0;font-size:44px;flex:1">🏁 ' + CFG.GRADE + '학년 전체 장애물 코스 순위</h1><button class="btn gray" id="tvX">닫기</button></div>';
+      if (!r.top.length) h += '<p style="font-size:30px">아직 도착한 친구가 없어요!</p>';
+      else h += '<ol style="list-style:none;padding:0;margin:20px 0;display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:10px">' + r.top.slice(0, 40).map(x =>
+        '<li style="display:flex;align-items:center;gap:14px;background:rgba(255,255,255,.14);border-radius:16px;padding:12px 18px;font-size:30px;font-weight:900">' +
+        '<span style="width:56px;text-align:center">' + (medal[x.rank - 1] || x.rank) + '</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><small style="opacity:.75">' + (+x.cls) + '반</small> ' + esc(x.nick) + '</span><span style="color:#ffe28a">' + (+x.best).toFixed(1) + '초</span></li>').join('') + '</ol>';
+      tv.innerHTML = h; $('#tvX').onclick = () => { clearInterval(iv); tv.classList.add('hide'); };
+    };
+    draw(); const iv = setInterval(draw, 5000);
+  }
+
   function openTV() {
     const tv = $('#tv'); tv.classList.remove('hide');
     const draw = async () => {

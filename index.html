@@ -76,9 +76,14 @@ footer{max-width:1280px; margin:20px auto 0; padding:16px; text-align:center; co
 .preview-bar{background:#ffefc2; text-align:center; padding:6px; font-weight:900; color:#8a5a00}
 
 /* 실험실 */
-.sub-tabs{display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap}
-.sub-tab{background:#eef3f8; padding:10px 18px; font-weight:900; color:var(--sub); font-size:19px}
-.sub-tab.on{background:#1d2b3a; color:#fff}
+.sub-tabs{display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap}
+.sub-tab{background:#fff; padding:14px 24px; font-weight:900; color:var(--ink); font-size:22px; border:3px solid #c9d6e2; box-shadow:0 3px 0 #c9d6e2}
+.sub-tab.on{background:#1d2b3a; color:#fff; border-color:#1d2b3a; box-shadow:0 3px 0 #0b141d}
+.sub-tab[data-sub=course]:not(.locked){background:linear-gradient(135deg,#ff9f1c,#ff5d5d); color:#fff; border-color:#e8590c; box-shadow:0 3px 0 #b8430a; animation:subpulse 1.6s infinite}
+.sub-tab[data-sub=course].on:not(.locked){animation:none; outline:4px solid #1d2b3a; outline-offset:2px}
+.sub-tab.locked{background:#eef3f8; color:#8797a8; border-color:#dbe4ec; box-shadow:none}
+.sub-badge{display:inline-block; background:#fff; color:#e8590c; border-radius:999px; padding:0 9px; font-size:15px; margin-left:6px; vertical-align:middle}
+@keyframes subpulse{50%{transform:translateY(-2px); box-shadow:0 6px 14px rgba(232,89,12,.35)}}
 .lab-wrap{display:grid; align-items:start; grid-template-columns:minmax(0,1fr) 340px; gap:14px}
 @media (max-width:900px){.lab-wrap{grid-template-columns:1fr}}
 .cv-box{position:relative; background:#fff; border-radius:var(--r); box-shadow:var(--shadow); overflow:hidden}
@@ -266,7 +271,7 @@ table.list td{border-bottom:1px solid var(--line); padding:8px}
             <div class="fan-btns" id="fanBtns">
               <button class="fan-btn" data-fan="back">공 뒤에서 <span class="ok"></span></button>
               <button class="fan-btn" data-fan="front">공 앞에서 <span class="ok"></span></button>
-              <button class="fan-btn" data-fan="side">공 옆에서 <span class="ok"></span></button>
+              <button class="fan-btn" data-fan="side">항상 수직으로 <span class="ok"></span></button>
               <button class="fan-btn" data-fan="oblique">비스듬히 <span class="ok"></span></button>
             </div>
             <button class="btn big" style="width:100%;margin-top:10px" id="labRun">▶ 공 굴리고 바람 불기</button>
@@ -289,6 +294,7 @@ table.list td{border-bottom:1px solid var(--line); padding:8px}
           <div class="textbook hide" id="labDone">✏️ 실험 ①~④ 완료! 교과서 174쪽 <b>해 보기 1·2번</b> 답을 교과서에 직접 써 보세요. 다 쓰면 🏁 장애물 코스에 도전!</div>
         </div>
       </div>
+      <div id="labCourseLock" class="panel lockbox hide"><b>🔒</b>선생님이 아직 장애물 코스를 열지 않았어요.<br>먼저 🌀 선풍기 실험 ①~④를 해 보세요!</div>
       <div id="labCourse" class="lab-wrap hide">
         <div>
           <div class="cv-box"><canvas id="courseCv"></canvas></div>
@@ -555,7 +561,7 @@ requestAnimationFrame(_frame);
 /* ================= 앱 상태 ================= */
 const APP = {
   token: null, me: null, preview: false, previewFromTeacher: false, guest: false, tab: 'lab',
-  open: { lab: false, curl: false, quiz: false, park: false },
+  open: { lab: false, course: false, curl: false, quiz: false, park: false },
   prog: {}, modules: {}
 };
 function isOpen(tab) { return APP.guest ? !!APP.open[tab] : (APP.preview || APP.open[tab]); }
@@ -589,7 +595,7 @@ async function checkGuest() {
   try {
     const r = await rpc('mot_public', {});
     $('#guestBtn').classList.toggle('hide', !r.guest);
-    if (r.guest) APP.open = Object.assign({ lab: false, curl: false, quiz: false, park: false }, r.open || {});
+    if (r.guest) APP.open = Object.assign({ lab: false, course: false, curl: false, quiz: false, park: false }, r.open || {});
   } catch (e) { $('#guestBtn').classList.add('hide'); }
   clearTimeout(_guestPoll);
   if (!$('#joinScreen').classList.contains('hide')) _guestPoll = setTimeout(checkGuest, 10000);
@@ -598,7 +604,7 @@ async function startGuest() {
   try {
     const r = await rpc('mot_public', {});
     if (!r.guest) { toast('지금은 둘러보기가 닫혀 있어요.'); $('#guestBtn').classList.add('hide'); return; }
-    APP.open = Object.assign({ lab: false, curl: false, quiz: false, park: false }, r.open || {});
+    APP.open = Object.assign({ lab: false, course: false, curl: false, quiz: false, park: false }, r.open || {});
   } catch (e) { toast(e.message); return; }
   clearTimeout(_guestPoll);
   APP.guest = true; APP.preview = true; APP.previewFromTeacher = false;
@@ -627,7 +633,7 @@ async function doJoin() {
 }
 async function loadMe() {
   const m = await rpc('mot_me', { token: APP.token });
-  APP.me = m; APP.open = Object.assign({ lab: false, curl: false, quiz: false, park: false }, m.open || {});
+  APP.me = m; APP.open = Object.assign({ lab: false, course: false, curl: false, quiz: false, park: false }, m.open || {});
   APP.prog = m.prog || {};
   renderMe();
 }
@@ -652,7 +658,7 @@ function startMePoll() {
         const r = await rpc('mot_public', {});
         if (!r.guest) { toast('선생님이 둘러보기를 닫았어요. 학번과 닉네임으로 입장해 주세요.', 4500); exitPreview(); return; }
         const before = JSON.stringify(APP.open);
-        APP.open = Object.assign({ lab: false, curl: false, quiz: false, park: false }, r.open || {});
+        APP.open = Object.assign({ lab: false, course: false, curl: false, quiz: false, park: false }, r.open || {});
         if (before !== JSON.stringify(APP.open)) setTab(APP.tab, true);
       } catch (e) { }
       return;
@@ -741,11 +747,11 @@ APP.modules.lab = (() => {
       why: '바람(힘)의 방향이 공의 운동 방향과 같아서 속력이 점점 빨라졌어요. 흐린 공 사이의 간격이 점점 넓어지지요!' },
     front: { label: '공 앞에서 바람을 불 때', ans: 'down', result: '공의 속력이 점점 느려진다.', start: [120, 290],
       why: '바람(힘)의 방향이 공의 운동 방향과 반대라서 속력이 점점 느려졌어요. 흐린 공 사이의 간격이 점점 좁아지지요!' },
-    side: { label: '공 옆에서 바람을 불 때', ans: 'turn', result: '공의 운동 방향이 바뀐다. (속력은 그대로)', start: [120, 500],
-      why: '바람(힘)이 운동 방향에 수직으로 작용해서 속력은 그대로이고 운동 방향만 바뀌었어요.',
+    side: { label: '운동 방향에 항상 수직으로 바람을 불 때', ans: 'turn', result: '공의 운동 방향이 바뀐다. (속력은 그대로)', start: [120, 500],
+      why: '선풍기가 공을 따라가며 바람(힘)을 항상 운동 방향에 수직으로 불어서, 속력은 그대로이고 운동 방향만 바뀌었어요.',
       tip: '💡 실제 실험에서는 선풍기를 공의 운동 방향과 항상 수직으로 맞추기 어려워서, 속력과 운동 방향이 모두 변하는 경우가 많아요. (교과서 표의 답도 그래서 "빨라지고 방향이 바뀐다"예요.)' },
-    oblique: { label: '공에 비스듬히 바람을 불 때', ans: 'both', result: '공의 속력과 운동 방향이 모두 변한다.', start: [120, 480],
-      why: '바람(힘)이 운동 방향에 비스듬하게 작용해서 속력과 운동 방향이 모두 변했어요.' }
+    oblique: { label: '운동 방향에 비스듬히 바람을 불 때', ans: 'both', result: '공의 속력과 운동 방향이 모두 변한다.', start: [120, 480],
+      why: '바람(힘)이 운동 방향에 비스듬하게(수직도 아니고 나란하지도 않게) 작용해서 속력과 운동 방향이 모두 변했어요.' }
   };
   const ORDER = ['back', 'front', 'side', 'oblique'];
   const ANS_TEXT = { up: '속력이 점점 빨라졌다', down: '속력이 점점 느려졌다', turn: '운동 방향만 바뀌었다', both: '속력과 운동 방향이 모두 변했다' };
@@ -886,7 +892,7 @@ APP.modules.lab = (() => {
     if (sub === 'exp') {
       if (run && !run.done) { step(run, dt); if (run.done) onRunDone(); }
       draw(t);
-    } else COURSE.tick(dt, t);
+    } else if (isOpen('course')) COURSE.tick(dt, t);
   }
 
   /* ---------- 진행 ---------- */
@@ -897,7 +903,7 @@ APP.modules.lab = (() => {
     });
   }
   function renderTable() {
-    $('#labTable').innerHTML = ORDER.map(m => '<tr><th>' + esc(MODES[m].label.replace(' 때', '')) + '</th><td>' +
+    $('#labTable').innerHTML = ORDER.map(m => '<tr><th>' + esc(MODES[m].label.replace('을 불 때', '')) + '</th><td>' +
       (done.has(m) ? esc(MODES[m].result) : '<span style="color:#aab">?</span>') + '</td></tr>').join('');
     $('#labDone').classList.toggle('hide', !ORDER.every(m => done.has(m)));
   }
@@ -1091,19 +1097,26 @@ APP.modules.lab = (() => {
   });
   $('#labRun').onclick = startRun;
   $$('#labAns button').forEach(b => b.onclick = () => answer(b.dataset.a, b));
-  $$('.sub-tab').forEach(b => b.onclick = () => {
-    sub = b.dataset.sub; $$('.sub-tab').forEach(x => x.classList.toggle('on', x === b));
-    $('#labExp').classList.toggle('hide', sub !== 'exp'); $('#labCourse').classList.toggle('hide', sub !== 'course');
-    resize();
-  });
+  // 하위 탭 (🏁 장애물 코스는 선생님이 열어야 들어갈 수 있음)
+  function renderSub() {
+    const courseOpen = isOpen('course');
+    const cb = $('.sub-tab[data-sub=course]');
+    cb.classList.toggle('locked', !courseOpen);
+    cb.innerHTML = courseOpen ? '🏁 장애물 코스 도전! <span class="sub-badge">GO</span>' : '🔒 장애물 코스 도전';
+    $$('.sub-tab').forEach(x => x.classList.toggle('on', x.dataset.sub === sub));
+    $('#labExp').classList.toggle('hide', sub !== 'exp');
+    $('#labCourse').classList.toggle('hide', sub !== 'course' || !courseOpen);
+    $('#labCourseLock').classList.toggle('hide', sub !== 'course' || courseOpen);
+  }
+  $$('.sub-tab').forEach(b => b.onclick = () => { sub = b.dataset.sub; renderSub(); resize(); });
   function resize() {
-    if (sub === 'exp') G = fitCanvas(cv, W, H, window.innerHeight * 0.68); else COURSE.resize();
+    if (sub === 'exp') G = fitCanvas(cv, W, H, window.innerHeight * 0.68); else if (isOpen('course')) COURSE.resize();
   }
   return {
     show() {
       active = true;
       done = new Set(APP.prog.lab || []);
-      renderFanBtns(); renderTable(); LOOPS.add(loop);
+      renderFanBtns(); renderTable(); renderSub(); LOOPS.add(loop);
       requestAnimationFrame(resize);
     },
     hide() { active = false; LOOPS.delete(loop); },
@@ -2210,7 +2223,7 @@ const TEACHER = (() => {
   let pw = null, tab = 'open', cls = 1, timer = null, data = {}, curlSet = { group: 2, stones: 3 };
   const T = { get pw() { return pw; } };
   const body = () => $('#tBody');
-  const OPEN_LABELS = { lab: '① 해 보기 실험실 (선풍기 실험 + 장애물 코스)', curl: '② 컬링 대결', park: '③ 놀이공원 탐구', quiz: '④ 운동 상태 퀴즈', guest: '학생 입장 화면에 「👀 로그인 없이 둘러보기」 버튼 보이기' };
+  const OPEN_LABELS = { lab: '① 해 보기 실험실 (선풍기 실험)', course: '　└ 🏁 장애물 코스 도전 (①번 안의 탭 · ①번이 열려 있어야 보여요)', curl: '② 컬링 대결', park: '③ 놀이공원 탐구', quiz: '④ 운동 상태 퀴즈', guest: '학생 입장 화면에 「👀 로그인 없이 둘러보기」 버튼 보이기' };
 
   T.login = () => {
     if (!HAS_CFG) { toast('config.js 설정이 먼저 필요해요. 설치 안내서를 확인해 주세요.', 3500); return; }

@@ -660,11 +660,13 @@ function renderMe() {
     b.textContent = (isOpen(t) ? '' : '🔒 ') + b.dataset.label;
   });
 }
-let _mePoll = null;
-function startMePoll() {
-  stopMePoll();
-  _mePoll = setInterval(async () => {
-    if (APP.guest && !document.hidden) {   // 둘러보기: 선생님이 닫으면 입장 화면으로
+let _mePoll = null, _meBusy = false;
+/* 선생님이 활동을 열고 닫은 것을 확인 (3초마다 + 화면으로 돌아오는 순간 바로) */
+async function meTick() {
+  if (_meBusy || document.hidden || $('#app').classList.contains('hide')) return;
+  _meBusy = true;
+  try {
+    if (APP.guest) {   // 둘러보기: 선생님이 닫으면 입장 화면으로
       try {
         const r = await rpc('mot_public', {});
         if (!r.guest) { toast('선생님이 둘러보기를 닫았어요. 학번과 닉네임으로 입장해 주세요.', 4500); exitPreview(); return; }
@@ -674,14 +676,20 @@ function startMePoll() {
       } catch (e) { }
       return;
     }
-    if (APP.preview || !APP.token || document.hidden) return;
+    if (APP.preview || !APP.token) return;
     try {
       const before = JSON.stringify(APP.open);
       await loadMe();
       if (before !== JSON.stringify(APP.open)) setTab(APP.tab, true);
     } catch (e) { if (e.code === 'NOAUTH') logoutForced(); }
-  }, 8000);
+  } finally { _meBusy = false; }
 }
+function startMePoll() {
+  stopMePoll();
+  _mePoll = setInterval(meTick, 3000);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden && _mePoll) meTick(); });
+window.addEventListener('focus', () => { if (_mePoll) meTick(); });
 function stopMePoll() { if (_mePoll) clearInterval(_mePoll); _mePoll = null; }
 
 function showApp() {
@@ -2299,7 +2307,7 @@ const TEACHER = (() => {
   /* 활동 열기·닫기 */
   async function rOpen() {
     try { const r = await call('mot_t_login'); data.open = r.open; setBadge(r.nick_reqs); } catch (e) { return; }
-    body().innerHTML = '<div class="panel"><h2 style="margin-top:0">활동 열기·닫기</h2><p style="color:var(--sub)">학생 화면에 8초 안에 반영돼요. 닫힌 활동은 🔒로 보여요.</p>' +
+    body().innerHTML = '<div class="panel"><h2 style="margin-top:0">활동 열기·닫기</h2><p style="color:var(--sub)">학생 화면에 3초 안에 반영돼요(새로고침 필요 없음). 닫힌 활동은 🔒로 보여요.</p>' +
       Object.keys(OPEN_LABELS).map(k => (k === 'guest' ? '<h3 style="margin:22px 0 4px">👀 로그인 없이 둘러보기</h3><p style="color:var(--sub);margin:0 0 4px">시험 기간 등에 학생이 입장하지 않고 열린 활동을 볼 수 있게 해요. 기록은 저장되지 않고 컬링은 연습만 돼요.</p>' : '') + '<div class="toggle-row"><span>' + OPEN_LABELS[k] + '</span><button class="switch' + (data.open[k] ? ' on' : '') + '" data-k="' + k + '" aria-label="열기/닫기"></button></div>').join('') + '</div>';
     $$('.switch', body()).forEach(b => b.onclick = async () => {
       try { data.open = await call('mot_t_set_open', { key: b.dataset.k, val: !data.open[b.dataset.k] }); rOpen(); } catch (e) { }

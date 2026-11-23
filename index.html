@@ -2265,6 +2265,13 @@ APP.modules.park = (() => {
 /* ================= 교사 모드 ================= */
 const TEACHER = (() => {
   let pw = null, tab = 'open', cls = 1, timer = null, data = {}, curlSet = { group: 2, stones: 3 };
+  // 화면을 새로 그릴 때마다 gen이 바뀜 → 예전 탭의 타이머·늦게 도착한 응답은 화면을 건드리지 못함
+  let gen = 0;
+  function every(fn, ms) {
+    const g = gen; clearInterval(timer);
+    const id = setInterval(() => { if (g !== gen) { clearInterval(id); return; } if (pw && !$('#teacher').classList.contains('hide')) fn(); }, ms);
+    timer = id;
+  }
   const T = { get pw() { return pw; } };
   const body = () => $('#tBody');
   const OPEN_LABELS = { lab: '① 해 보기 실험실 (선풍기 실험)', course: '　└ 🏁 장애물 코스 도전 (①번 안의 탭 · ①번이 열려 있어야 보여요)', curl: '② 컬링 대결', park: '③ 놀이공원 탐구', quiz: '④ 운동 상태 퀴즈', guest: '학생 입장 화면에 「👀 로그인 없이 둘러보기」 버튼 보이기' };
@@ -2289,7 +2296,7 @@ const TEACHER = (() => {
     $('#teacher').classList.remove('hide'); T.render();
   }
   function closePanel() {
-    clearInterval(timer); $('#teacher').classList.add('hide');
+    gen++; clearInterval(timer); timer = null; $('#teacher').classList.add('hide');
     if (APP.token && APP.me && !APP.preview) showApp(); else { APP.preview = false; showJoin(); }
   }
   async function call(fn, p) { try { return await rpc(fn, Object.assign({ pw }, p || {})); } catch (e) { toast(e.message, 3500); if (e.code === 'BADPW') { pw = null; closePanel(); } throw e; } }
@@ -2299,18 +2306,20 @@ const TEACHER = (() => {
   function setBadge(n) { $('#tNickBadge').innerHTML = n ? '<span class="badge">' + (+n) + '</span>' : ''; }
 
   T.render = () => {
-    clearInterval(timer);
+    gen++; clearInterval(timer); timer = null;
     $$('#tTabs .t-tab').forEach(b => b.classList.toggle('on', b.dataset.t === tab));
     ({ open: rOpen, stu: rStu, nick: rNick, curl: rCurl, preview: rPreview })[tab]();
   };
 
   /* 활동 열기·닫기 */
   async function rOpen() {
+    const g = gen;
     try { const r = await call('mot_t_login'); data.open = r.open; setBadge(r.nick_reqs); } catch (e) { return; }
+    if (g !== gen) return;
     body().innerHTML = '<div class="panel"><h2 style="margin-top:0">활동 열기·닫기</h2><p style="color:var(--sub)">학생 화면에 3초 안에 반영돼요(새로고침 필요 없음). 닫힌 활동은 🔒로 보여요.</p>' +
       Object.keys(OPEN_LABELS).map(k => (k === 'guest' ? '<h3 style="margin:22px 0 4px">👀 로그인 없이 둘러보기</h3><p style="color:var(--sub);margin:0 0 4px">시험 기간 등에 학생이 입장하지 않고 열린 활동을 볼 수 있게 해요. 기록은 저장되지 않고 컬링은 연습만 돼요.</p>' : '') + '<div class="toggle-row"><span>' + OPEN_LABELS[k] + '</span><button class="switch' + (data.open[k] ? ' on' : '') + '" data-k="' + k + '" aria-label="열기/닫기"></button></div>').join('') + '</div>';
     $$('.switch', body()).forEach(b => b.onclick = async () => {
-      try { data.open = await call('mot_t_set_open', { key: b.dataset.k, val: !data.open[b.dataset.k] }); rOpen(); } catch (e) { }
+      const g2 = gen; try { data.open = await call('mot_t_set_open', { key: b.dataset.k, val: !data.open[b.dataset.k] }); if (g2 === gen) rOpen(); } catch (e) { }
     });
   }
 
@@ -2319,10 +2328,12 @@ const TEACHER = (() => {
     body().innerHTML = '<div class="panel"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><h2 style="margin:0">학생 현황</h2>' + classSel() +
       '<button class="btn gray" id="tRef">새로고침</button><span style="flex:1"></span><button class="btn orange" id="tCourseTv">🏁 장애물 코스 순위 크게 보기(TV)</button></div><div id="tStu" style="margin-top:12px;overflow:auto">불러오는 중…</div></div>';
     bindCls(rStu); $('#tRef').onclick = loadStu; $('#tCourseTv').onclick = openCourseTV; loadStu();
-    timer = setInterval(loadStu, 10000);
+    every(loadStu, 10000);
   }
   async function loadStu() {
+    const g = gen, c0 = cls;
     let r; try { r = await call('mot_t_students', { class_no: cls }); } catch (e) { return; }
+    if (g !== gen || c0 !== cls || tab !== 'stu') return;
     setBadge(r.nick_reqs);
     const ck = (arr, k) => (arr || []).includes(k) ? '✅' : '·';
     const box = $('#tStu'); if (!box) return;
@@ -2350,15 +2361,18 @@ const TEACHER = (() => {
 
   /* 닉네임 요청 */
   async function rNick() {
+    const g = gen;
     let list; try { list = await call('mot_t_nick_reqs'); } catch (e) { return; }
+    if (g !== gen || tab !== 'nick') return;
     setBadge(list.length);
     body().innerHTML = '<div class="panel"><h2 style="margin-top:0">닉네임 변경 요청</h2>' + (list.length ?
       '<table class="list"><tr><th>학번</th><th>지금 닉네임</th><th>바꾸고 싶은 닉네임</th><th></th></tr>' + list.map(q =>
         '<tr><td>' + q.sid + '</td><td>' + esc(q.nick) + '</td><td><b>' + esc(q.new_nick) + '</b></td><td><button class="btn green" style="padding:6px 12px" data-ok="' + q.id + '">승인</button> <button class="btn gray" style="padding:6px 12px" data-no="' + q.id + '">거절</button></td></tr>').join('') + '</table>'
       : '<p>요청이 없어요.</p>') + '</div>';
-    $$('[data-ok]', body()).forEach(b => b.onclick = async () => { try { await call('mot_t_nick_decide', { id: +b.dataset.ok, ok: true }); } catch (e) { } rNick(); });
-    $$('[data-no]', body()).forEach(b => b.onclick = async () => { try { await call('mot_t_nick_decide', { id: +b.dataset.no, ok: false }); } catch (e) { } rNick(); });
-    timer = setInterval(async () => { try { const l = await rpc('mot_t_nick_reqs', { pw }); if (l.length !== list.length) rNick(); } catch (e) { } }, 10000);
+    $$('[data-ok]', body()).forEach(b => b.onclick = async () => { try { await call('mot_t_nick_decide', { id: +b.dataset.ok, ok: true }); } catch (e) { } if (g === gen) rNick(); });
+    $$('[data-no]', body()).forEach(b => b.onclick = async () => { try { await call('mot_t_nick_decide', { id: +b.dataset.no, ok: false }); } catch (e) { } if (g === gen) rNick(); });
+    // 새 요청이 오면 이 탭을 보고 있을 때만 목록을 새로 그림 (타이머는 하나만 유지)
+    every(async () => { try { const l = await rpc('mot_t_nick_reqs', { pw }); if (g === gen && tab === 'nick' && l.length !== list.length) rNick(); } catch (e) { } }, 10000);
   }
 
   /* 🥌 컬링 대회 */
@@ -2366,10 +2380,12 @@ const TEACHER = (() => {
     body().innerHTML = '<div class="panel"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><h2 style="margin:0">🥌 컬링 대회</h2>' + classSel() +
       '<span style="flex:1"></span><button class="btn orange" id="tTv">📺 크게 보기(TV)</button></div><div id="tCurl" style="margin-top:12px">불러오는 중…</div></div>';
     bindCls(rCurl); $('#tTv').onclick = openTV;
-    loadCurl(); timer = setInterval(loadCurl, 2000);
+    loadCurl(); every(loadCurl, 2000);
   }
   async function loadCurl() {
+    const g = gen, c0 = cls;
     let r; try { r = await rpc('mot_t_curl_status', { pw, class_no: cls }); } catch (e) { return; }
+    if (g !== gen || c0 !== cls || tab !== 'curl') return;
     data.curl = r; drawCurl();
   }
   function drawCurl() {

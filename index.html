@@ -206,6 +206,16 @@ table.list td{border-bottom:1px solid var(--line); padding:8px}
 .online-dot.on{background:var(--ok)}
 .t-match{background:#fff; border-radius:14px; padding:10px 12px; border:2px solid var(--line); margin:6px 0}
 .t-match .sid{color:#8797a8; font-size:13px}
+/* 🎵 배경음악 */
+#musicBar{position:fixed; right:14px; bottom:14px; z-index:150; display:flex; flex-direction:column; align-items:flex-end; gap:8px}
+#musicBar.hide{display:none}
+.mb-fab{width:58px; height:58px; border-radius:50%; background:#7c4dff; color:#fff; font-size:28px; box-shadow:0 4px 14px rgba(60,20,160,.35)}
+.mb-panel{background:#fff; color:var(--ink); border-radius:18px; box-shadow:0 8px 28px rgba(20,40,70,.28); padding:14px; width:min(400px,92vw)}
+.mb-videobox{background:#1d2b3a; border-radius:14px; padding:6px; box-shadow:0 6px 20px rgba(0,0,0,.3)}
+.mb-vhead{display:flex; align-items:center; justify-content:space-between; color:#fff; font-weight:900; font-size:14px; padding:0 4px 6px}
+.mb-vhead button{background:#33475b; color:#fff; font-size:13px; padding:3px 10px; border-radius:8px}
+.mb-video{width:240px; height:200px}
+.mb-video iframe{width:100%; height:100%; border:0; border-radius:8px}
 #tv{position:fixed; inset:0; background:linear-gradient(160deg,#0e3a5a,#1a9fe0); z-index:120; color:#fff; overflow:auto; padding:24px}
 #tv .bk-match{background:rgba(255,255,255,.14); border-color:rgba(255,255,255,.3); color:#fff; font-size:24px}
 #tv .bk-round h4{color:#cfeaff; font-size:26px}
@@ -2262,6 +2272,117 @@ APP.modules.park = (() => {
     resize
   };
 })();
+/* ================= 🎵 교사용 배경음악 (유튜브) =================
+   · 교사 모드에 들어간 컴퓨터에서만 나옴 (학생 기기에서는 소리 안 남)
+   · 유튜브 영상 또는 재생목록 주소를 붙여 넣고 ▶ 재생
+   · 교사 화면의 탭을 바꾸거나 TV 화면을 띄워도 음악은 계속 나옴 */
+const MUSIC = (() => {
+  const KEY = 'mot_music_url_v1';
+  let player = null, apiLoading = null, ready = false, open = false, shown = false;
+  const bar = document.createElement('div');
+  bar.id = 'musicBar';
+  bar.className = 'hide';
+  bar.innerHTML =
+    '<button id="mbToggle" class="mb-fab" title="배경음악">🎵</button>' +
+    '<div id="mbPanel" class="mb-panel hide">' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><b style="flex:1;font-size:18px">🎵 배경음악 (교사 컴퓨터에서만)</b><button class="btn gray" id="mbClose" style="padding:4px 10px;font-size:14px">접기</button></div>' +
+      '<div style="display:flex;gap:6px"><input id="mbUrl" placeholder="유튜브 영상·재생목록 주소 붙여 넣기" style="flex:1;min-width:0;padding:8px 10px;border:2px solid var(--line);border-radius:10px;font-size:15px"></div>' +
+      '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">' +
+        '<button class="btn green" id="mbPlay" style="padding:8px 14px;font-size:16px">▶ 재생</button>' +
+        '<button class="btn gray" id="mbPause" style="padding:8px 14px;font-size:16px">⏸ 멈춤</button>' +
+        '<button class="btn gray" id="mbNext" style="padding:8px 14px;font-size:16px">⏭ 다음 곡</button>' +
+        '<label style="display:flex;align-items:center;gap:6px;font-weight:700;font-size:15px">🔊<input type="range" id="mbVol" min="0" max="100" value="40" style="width:110px"></label>' +
+      '</div>' +
+      '<div id="mbNow" style="margin-top:8px;font-size:14px;color:var(--sub);min-height:20px"></div>' +
+      '<a id="mbSearch" target="_blank" rel="noopener" href="https://www.youtube.com/results?search_query=%EB%A9%9C%EB%A1%A0+TOP100+%ED%94%8C%EB%A0%88%EC%9D%B4%EB%A6%AC%EC%8A%A4%ED%8A%B8" style="display:inline-block;margin-top:4px;font-size:14px;font-weight:700">🔎 유튜브에서 「멜론 TOP100 플레이리스트」 찾기 (새 탭)</a>' +
+    '</div>' +
+    '<div id="mbVideoBox" class="mb-videobox hide"><div class="mb-vhead"><span>🎵 배경음악</span><button id="mbExpand">조절 ▲</button></div><div id="mbVideoWrap" class="mb-video"><div id="mbVideo"></div></div></div>';
+  document.body.appendChild(bar);
+  const $b = s => bar.querySelector(s);
+  const now = t => { $b('#mbNow').textContent = t; };
+
+  /* 유튜브 주소에서 영상 ID·재생목록 ID 꺼내기 */
+  function parse(url) {
+    url = (url || '').trim(); if (!url) return null;
+    let u; try { u = new URL(url.startsWith('http') ? url : 'https://' + url); } catch (e) { return null; }
+    if (!/(^|\.)youtube\.com$|(^|\.)youtu\.be$|(^|\.)youtube-nocookie\.com$/.test(u.hostname)) return null;
+    const list = u.searchParams.get('list');
+    let v = u.searchParams.get('v');
+    if (!v && /youtu\.be$/.test(u.hostname)) v = u.pathname.slice(1).split('/')[0];
+    const m = u.pathname.match(/\/(embed|shorts|live)\/([\w-]{6,})/); if (!v && m) v = m[2];
+    if (v && !/^[\w-]{6,20}$/.test(v)) v = null;
+    const okList = list && /^[\w-]{10,64}$/.test(list) ? list : null;
+    if (!v && !okList) return null;
+    return { v, list: okList };
+  }
+  function loadApi() {
+    if (window.YT && window.YT.Player) return Promise.resolve();
+    if (apiLoading) return apiLoading;
+    apiLoading = new Promise((res, rej) => {
+      const prev = window.onYouTubeIframeAPIReady;
+      window.onYouTubeIframeAPIReady = () => { if (prev) try { prev(); } catch (e) { } res(); };
+      const s = document.createElement('script'); s.src = 'https://www.youtube.com/iframe_api';
+      s.onerror = () => { apiLoading = null; rej(new Error('유튜브에 연결할 수 없어요. 학교 인터넷에서 유튜브가 막혀 있는지 확인해 주세요.')); };
+      document.head.appendChild(s);
+    });
+    return apiLoading;
+  }
+  function makePlayer(src) {
+    return new Promise(res => {
+      const vars = { autoplay: 1, controls: 1, rel: 0, playsinline: 1, modestbranding: 1, origin: location.origin };
+      if (src.list) { vars.listType = 'playlist'; vars.list = src.list; }
+      else if (src.v) { vars.loop = 1; vars.playlist = src.v; }   // 영상 하나면 반복 재생
+      player = new YT.Player('mbVideo', {
+        width: '100%', height: '100%', videoId: src.v || undefined, playerVars: vars,
+        events: {
+          onReady: e => { ready = true; e.target.setVolume(+$b('#mbVol').value); e.target.playVideo(); res(); },
+          onStateChange: e => {
+            if (e.data === YT.PlayerState.PLAYING) { const d = e.target.getVideoData && e.target.getVideoData(); now('▶ 재생 중' + (d && d.title ? ' · ' + d.title : '')); }
+            else if (e.data === YT.PlayerState.PAUSED) now('⏸ 멈춤');
+          },
+          onError: e => {
+            if (e.data === 101 || e.data === 150 || e.data === 100) {
+              if (src.list) { now('⚠ 이 곡은 다른 사이트에서 재생이 막혀 있어 다음 곡으로 넘어가요'); try { e.target.nextVideo(); } catch (x) { } }
+              else now('⚠ 이 영상은 유튜브 밖에서 재생할 수 없게 막혀 있어요. 다른 영상이나 재생목록 주소를 넣어 주세요.');
+            } else now('⚠ 재생할 수 없는 주소예요. 주소를 다시 확인해 주세요.');
+          }
+        }
+      });
+    });
+  }
+  async function play() {
+    const src = parse($b('#mbUrl').value);
+    if (!src) { now('⚠ 유튜브 영상이나 재생목록 주소를 붙여 넣어 주세요. (예: https://www.youtube.com/playlist?list=…)'); return; }
+    try { localStorage.setItem(KEY, $b('#mbUrl').value.trim()); } catch (e) { }
+    now('불러오는 중…');
+    try { await loadApi(); } catch (e) { now('⚠ ' + e.message); return; }
+    const same = player && player._src && player._src.v === src.v && player._src.list === src.list;
+    if (same && ready) { player.playVideo(); return; }
+    if (player) { try { player.destroy(); } catch (e) { } player = null; ready = false; $b('#mbVideoWrap').innerHTML = '<div id="mbVideo"></div>'; }
+    $b('#mbVideoBox').classList.remove('hide'); $b('#mbToggle').classList.add('hide');
+    await makePlayer(src); player._src = src;
+  }
+  function pause() { if (player && ready) player.pauseVideo(); }
+  function next() { if (player && ready) { try { player.nextVideo(); } catch (e) { } } }
+
+  function setOpen(v) { open = v; $b('#mbPanel').classList.toggle('hide', !v); $b('#mbToggle').classList.toggle('hide', v || !!player); $b('#mbExpand').classList.toggle('hide', v); }
+  $b('#mbToggle').onclick = () => setOpen(true);
+  $b('#mbClose').onclick = () => setOpen(false);
+  $b('#mbExpand').onclick = () => setOpen(true);
+  $b('#mbPlay').onclick = play;
+  $b('#mbPause').onclick = pause;
+  $b('#mbNext').onclick = next;
+  $b('#mbVol').oninput = e => { if (player && ready) player.setVolume(+e.target.value); };
+  $b('#mbUrl').addEventListener('keydown', e => { if (e.key === 'Enter') play(); });
+  try { $b('#mbUrl').value = localStorage.getItem(KEY) || ''; } catch (e) { }
+
+  return {
+    /* 교사 모드에 들어가면 보이고, 교사 모드에서 완전히 나가면 음악도 멈춤 */
+    show() { if (!shown) { shown = true; bar.classList.remove('hide'); } },
+    hide() { shown = false; bar.classList.add('hide'); setOpen(false); pause(); },
+    parse
+  };
+})();
 /* ================= 교사 모드 ================= */
 const TEACHER = (() => {
   let pw = null, tab = 'open', cls = 1, timer = null, data = {}, curlSet = { group: 2, stones: 3 };
@@ -2291,11 +2412,13 @@ const TEACHER = (() => {
     setTimeout(() => $('#tpw', md.box).focus(), 50);
   };
   function openPanel() {
+    MUSIC.show();
     hideAllModules(); stopMePoll();
     $('#app').classList.add('hide'); $('#joinScreen').classList.add('hide');
     $('#teacher').classList.remove('hide'); T.render();
   }
   function closePanel() {
+    MUSIC.hide();
     gen++; clearInterval(timer); timer = null; $('#teacher').classList.add('hide');
     if (APP.token && APP.me && !APP.preview) showApp(); else { APP.preview = false; showJoin(); }
   }

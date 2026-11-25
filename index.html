@@ -210,12 +210,18 @@ table.list td{border-bottom:1px solid var(--line); padding:8px}
 #musicBar{position:fixed; right:14px; bottom:14px; z-index:150; display:flex; flex-direction:column; align-items:flex-end; gap:8px}
 #musicBar.hide{display:none}
 .mb-fab{width:58px; height:58px; border-radius:50%; background:#7c4dff; color:#fff; font-size:28px; box-shadow:0 4px 14px rgba(60,20,160,.35)}
-.mb-panel{background:#fff; color:var(--ink); border-radius:18px; box-shadow:0 8px 28px rgba(20,40,70,.28); padding:14px; width:min(400px,92vw)}
-.mb-videobox{background:#1d2b3a; border-radius:14px; padding:6px; box-shadow:0 6px 20px rgba(0,0,0,.3)}
-.mb-vhead{display:flex; align-items:center; justify-content:space-between; color:#fff; font-weight:900; font-size:14px; padding:0 4px 6px}
-.mb-vhead button{background:#33475b; color:#fff; font-size:13px; padding:3px 10px; border-radius:8px}
-.mb-video{width:240px; height:200px}
-.mb-video iframe{width:100%; height:100%; border:0; border-radius:8px}
+.mb-panel{background:#fff; color:var(--ink); border-radius:18px; box-shadow:0 8px 28px rgba(20,40,70,.28); padding:12px 14px 14px; width:min(380px,92vw)}
+.mb-head{display:flex; align-items:center; gap:8px; margin:-4px -4px 8px; padding:4px; border-radius:10px; cursor:move; user-select:none; -webkit-user-select:none; touch-action:none}
+.mb-grip{color:#8797a8; font-size:20px; cursor:move; padding:0 2px}
+.mb-pill{display:flex; align-items:center; gap:6px; background:#1d2b3a; color:#fff; border-radius:999px; padding:6px 8px 6px 10px; box-shadow:0 6px 18px rgba(0,0,0,.3); cursor:move; user-select:none; -webkit-user-select:none; touch-action:none; max-width:min(320px,90vw)}
+.mb-pill .mb-grip{color:#9fb3c8}
+.mb-pill-title{font-weight:900; font-size:14px; max-width:170px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.mb-pill button{background:#33475b; color:#fff; width:34px; height:34px; border-radius:50%; font-size:15px; padding:0; flex:0 0 auto}
+/* 영상: 펼쳤을 때만 작게 보이고, 접으면 소리만 나오게 화면 밖으로 숨김 */
+.mb-video{width:100%; height:0; overflow:hidden}
+#musicBar.mb-open .mb-video{height:160px; width:min(380px,92vw); border-radius:12px; box-shadow:0 8px 28px rgba(20,40,70,.28); background:#000}
+#musicBar:not(.mb-open) .mb-video{position:fixed; left:0; bottom:0; width:1px; height:1px; opacity:0; pointer-events:none}
+.mb-video iframe{width:100%; height:100%; border:0}
 #tv{position:fixed; inset:0; background:linear-gradient(160deg,#0e3a5a,#1a9fe0); z-index:120; color:#fff; overflow:auto; padding:24px}
 #tv .bk-match{background:rgba(255,255,255,.14); border-color:rgba(255,255,255,.3); color:#fff; font-size:24px}
 #tv .bk-round h4{color:#cfeaff; font-size:26px}
@@ -2277,15 +2283,15 @@ APP.modules.park = (() => {
    · 유튜브 영상 또는 재생목록 주소를 붙여 넣고 ▶ 재생
    · 교사 화면의 탭을 바꾸거나 TV 화면을 띄워도 음악은 계속 나옴 */
 const MUSIC = (() => {
-  const KEY = 'mot_music_url_v1';
-  let player = null, apiLoading = null, ready = false, open = false, shown = false;
+  const KEY = 'mot_music_url_v1', POSKEY = 'mot_music_pos_v1';
+  let player = null, apiLoading = null, ready = false, open = false, shown = false, playing = false, title = '';
   const bar = document.createElement('div');
   bar.id = 'musicBar';
   bar.className = 'hide';
   bar.innerHTML =
     '<button id="mbToggle" class="mb-fab" title="배경음악">🎵</button>' +
     '<div id="mbPanel" class="mb-panel hide">' +
-      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><b style="flex:1;font-size:18px">🎵 배경음악 (교사 컴퓨터에서만)</b><button class="btn gray" id="mbClose" style="padding:4px 10px;font-size:14px">접기</button></div>' +
+      '<div class="mb-head" data-drag><span class="mb-grip" title="끌어서 옮기기">⠿</span><b style="flex:1;font-size:18px">🎵 배경음악 <small style="font-size:13px;color:var(--sub)">교사 컴퓨터에서만</small></b><button class="btn gray" id="mbClose" style="padding:4px 10px;font-size:14px">접기 ▼</button></div>' +
       '<div style="display:flex;gap:6px"><input id="mbUrl" placeholder="유튜브 영상·재생목록 주소 붙여 넣기" style="flex:1;min-width:0;padding:8px 10px;border:2px solid var(--line);border-radius:10px;font-size:15px"></div>' +
       '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">' +
         '<button class="btn green" id="mbPlay" style="padding:8px 14px;font-size:16px">▶ 재생</button>' +
@@ -2296,7 +2302,13 @@ const MUSIC = (() => {
       '<div id="mbNow" style="margin-top:8px;font-size:14px;color:var(--sub);min-height:20px"></div>' +
       '<a id="mbSearch" target="_blank" rel="noopener" href="https://www.youtube.com/results?search_query=%EB%A9%9C%EB%A1%A0+TOP100+%ED%94%8C%EB%A0%88%EC%9D%B4%EB%A6%AC%EC%8A%A4%ED%8A%B8" style="display:inline-block;margin-top:4px;font-size:14px;font-weight:700">🔎 유튜브에서 「멜론 TOP100 플레이리스트」 찾기 (새 탭)</a>' +
     '</div>' +
-    '<div id="mbVideoBox" class="mb-videobox hide"><div class="mb-vhead"><span>🎵 배경음악</span><button id="mbExpand">조절 ▲</button></div><div id="mbVideoWrap" class="mb-video"><div id="mbVideo"></div></div></div>';
+    /* 영상은 조절 창 밖에 둠 → 창을 접어도(숨겨도) 소리는 계속 나옴 */
+    '<div id="mbVideoWrap" class="mb-video"><div id="mbVideo"></div></div>' +
+    /* 접었을 때: 소리만 나오는 작은 막대 (끌어서 원하는 곳으로 옮길 수 있음) */
+    '<div id="mbPill" class="mb-pill hide" data-drag>' +
+      '<span class="mb-grip" title="끌어서 옮기기">⠿</span><span id="mbPillTitle" class="mb-pill-title">🎵</span>' +
+      '<button id="mbPP" title="재생/멈춤">⏸</button><button id="mbPN" title="다음 곡">⏭</button><button id="mbExpand" title="조절 창 펼치기">▲</button>' +
+    '</div>';
   document.body.appendChild(bar);
   const $b = s => bar.querySelector(s);
   const now = t => { $b('#mbNow').textContent = t; };
@@ -2337,8 +2349,9 @@ const MUSIC = (() => {
         events: {
           onReady: e => { ready = true; e.target.setVolume(+$b('#mbVol').value); e.target.playVideo(); res(); },
           onStateChange: e => {
-            if (e.data === YT.PlayerState.PLAYING) { const d = e.target.getVideoData && e.target.getVideoData(); now('▶ 재생 중' + (d && d.title ? ' · ' + d.title : '')); }
-            else if (e.data === YT.PlayerState.PAUSED) now('⏸ 멈춤');
+            if (e.data === YT.PlayerState.PLAYING) { const d = e.target.getVideoData && e.target.getVideoData(); title = d && d.title || ''; playing = true; now('▶ 재생 중' + (title ? ' · ' + title : '')); }
+            else if (e.data === YT.PlayerState.PAUSED) { playing = false; now('⏸ 멈춤'); }
+            renderPill();
           },
           onError: e => {
             if (e.data === 101 || e.data === 150 || e.data === 100) {
@@ -2359,16 +2372,63 @@ const MUSIC = (() => {
     const same = player && player._src && player._src.v === src.v && player._src.list === src.list;
     if (same && ready) { player.playVideo(); return; }
     if (player) { try { player.destroy(); } catch (e) { } player = null; ready = false; $b('#mbVideoWrap').innerHTML = '<div id="mbVideo"></div>'; }
-    $b('#mbVideoBox').classList.remove('hide'); $b('#mbToggle').classList.add('hide');
-    await makePlayer(src); player._src = src;
+    await makePlayer(src); player._src = src; renderPill();
   }
   function pause() { if (player && ready) player.pauseVideo(); }
+  function renderPill() {
+    $b('#mbPP').textContent = playing ? '⏸' : '▶';
+    $b('#mbPillTitle').textContent = (playing ? '🎵 ' : '⏸ ') + (title || '배경음악');
+    $b('#mbPillTitle').title = title;
+  }
   function next() { if (player && ready) { try { player.nextVideo(); } catch (e) { } } }
 
-  function setOpen(v) { open = v; $b('#mbPanel').classList.toggle('hide', !v); $b('#mbToggle').classList.toggle('hide', v || !!player); $b('#mbExpand').classList.toggle('hide', v); }
+  /* 펼침: 조절 창 + 작은 영상 / 접힘: 영상은 숨기고 소리만, 작은 막대만 보임 */
+  function setOpen(v) {
+    open = v;
+    bar.classList.toggle('mb-open', v);
+    $b('#mbPanel').classList.toggle('hide', !v);
+    $b('#mbToggle').classList.toggle('hide', v || !!player);
+    $b('#mbPill').classList.toggle('hide', v || !player);
+    requestAnimationFrame(clampPos);
+  }
+
+  /* 끌어서 옮기기 (위치는 이 컴퓨터에 기억) */
+  function applyPos(p) {
+    if (!p) { bar.style.left = bar.style.top = ''; bar.style.right = '14px'; bar.style.bottom = '14px'; return; }
+    bar.style.right = bar.style.bottom = 'auto'; bar.style.left = p.x + 'px'; bar.style.top = p.y + 'px';
+  }
+  function clampPos() {
+    if (bar.style.left === '' || bar.classList.contains('hide')) return;
+    const r = bar.getBoundingClientRect();
+    const x = clamp(r.left, 4, Math.max(4, innerWidth - r.width - 4)), y = clamp(r.top, 4, Math.max(4, innerHeight - r.height - 4));
+    applyPos({ x, y });
+  }
+  let drag = null;
+  bar.addEventListener('pointerdown', e => {
+    const h = e.target.closest('[data-drag]');
+    if (!h || e.target.closest('button,input,a')) return;
+    const r = bar.getBoundingClientRect();
+    drag = { dx: e.clientX - r.left, dy: e.clientY - r.top, id: e.pointerId };
+    try { h.setPointerCapture(e.pointerId); } catch (x) { }
+    e.preventDefault();
+  });
+  bar.addEventListener('pointermove', e => {
+    if (!drag || e.pointerId !== drag.id) return;
+    applyPos({ x: e.clientX - drag.dx, y: e.clientY - drag.dy }); clampPos();
+  });
+  const endDrag = e => {
+    if (!drag || e.pointerId !== drag.id) return; drag = null;
+    const r = bar.getBoundingClientRect();
+    try { localStorage.setItem(POSKEY, JSON.stringify({ x: Math.round(r.left), y: Math.round(r.top) })); } catch (x) { }
+  };
+  bar.addEventListener('pointerup', endDrag); bar.addEventListener('pointercancel', endDrag);
+  window.addEventListener('resize', clampPos);
+  try { const p = JSON.parse(localStorage.getItem(POSKEY) || 'null'); if (p && isFinite(p.x) && isFinite(p.y)) applyPos(p); } catch (e) { }
   $b('#mbToggle').onclick = () => setOpen(true);
   $b('#mbClose').onclick = () => setOpen(false);
   $b('#mbExpand').onclick = () => setOpen(true);
+  $b('#mbPP').onclick = () => { if (!player || !ready) return; if (playing) player.pauseVideo(); else player.playVideo(); };
+  $b('#mbPN').onclick = next;
   $b('#mbPlay').onclick = play;
   $b('#mbPause').onclick = pause;
   $b('#mbNext').onclick = next;
@@ -2378,7 +2438,7 @@ const MUSIC = (() => {
 
   return {
     /* 교사 모드에 들어가면 보이고, 교사 모드에서 완전히 나가면 음악도 멈춤 */
-    show() { if (!shown) { shown = true; bar.classList.remove('hide'); } },
+    show() { if (!shown) { shown = true; bar.classList.remove('hide'); requestAnimationFrame(clampPos); } },
     hide() { shown = false; bar.classList.add('hide'); setOpen(false); pause(); },
     parse
   };
